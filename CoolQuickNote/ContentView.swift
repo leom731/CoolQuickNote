@@ -76,7 +76,7 @@ struct ContentView: View {
                 .padding(.bottom, 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 200, minHeight: 200)
+        .frame(minWidth: 100, minHeight: 60)
         .background(currentBackgroundColor)
         .cornerRadius(8)
         .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
