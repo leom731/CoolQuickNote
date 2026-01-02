@@ -16,6 +16,8 @@ struct ContentView: View {
     @FocusState private var isTextEditorFocused: Bool
     @State private var isHoveringWindow = false
     @State private var currentWindow: NSWindow?
+    @State private var isAppActive = true
+    @State private var isWindowKey = false
 
     init(noteId: UUID, appDelegate: AppDelegate) {
         self.noteId = noteId
@@ -100,6 +102,10 @@ struct ContentView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isTextEditorFocused = true
             }
+
+            // Sync initial app/window state for button visibility
+            isAppActive = NSApp?.isActive ?? true
+            isWindowKey = currentWindow?.isKeyWindow ?? false
         }
         .onChange(of: currentWindow) { window in
             if window != nil {
@@ -108,6 +114,8 @@ struct ContentView: View {
                     updateTrafficLightButtons(visible: shouldShowButtons)
                 }
             }
+
+            isWindowKey = window?.isKeyWindow ?? false
         }
         .onChange(of: isHoveringWindow) { _ in
             updateTrafficLightButtons(visible: shouldShowButtons)
@@ -115,10 +123,28 @@ struct ContentView: View {
         .onChange(of: isTextEditorFocused) { _ in
             updateTrafficLightButtons(visible: shouldShowButtons)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            isAppActive = true
+            updateTrafficLightButtons(visible: shouldShowButtons)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            isAppActive = false
+            updateTrafficLightButtons(visible: shouldShowButtons)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+            guard let window = notification.object as? NSWindow, window == currentWindow else { return }
+            isWindowKey = true
+            updateTrafficLightButtons(visible: shouldShowButtons)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
+            guard let window = notification.object as? NSWindow, window == currentWindow else { return }
+            isWindowKey = false
+            updateTrafficLightButtons(visible: shouldShowButtons)
+        }
     }
 
     var shouldShowButtons: Bool {
-        isHoveringWindow || isTextEditorFocused
+        isAppActive && isWindowKey && (isHoveringWindow || isTextEditorFocused)
     }
 
     func updateTrafficLightButtons(visible: Bool) {
