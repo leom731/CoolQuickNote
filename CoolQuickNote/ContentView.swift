@@ -1,15 +1,31 @@
 import SwiftUI
 
 struct ContentView: View {
-    @AppStorage("noteContent") private var noteContent: String = ""
-    @AppStorage("selectedFont") private var selectedFont: String = "regular"
-    @AppStorage("fontSize") private var fontSize: Double = 24
-    @AppStorage("fontColor") private var fontColorName: String = "blue"
-    @AppStorage("backgroundColor") private var backgroundColorName: String = "yellow"
-    @AppStorage("alwaysOnTop") private var alwaysOnTop: Bool = true
+    let noteId: UUID
+    let appDelegate: AppDelegate
+
+    @AppStorage var noteContent: String
+    @AppStorage var selectedFont: String
+    @AppStorage var fontSize: Double
+    @AppStorage var fontColorName: String
+    @AppStorage var backgroundColorName: String
+    @AppStorage var alwaysOnTop: Bool
 
     @State private var showSettings = false
     @FocusState private var isTextEditorFocused: Bool
+
+    init(noteId: UUID, appDelegate: AppDelegate) {
+        self.noteId = noteId
+        self.appDelegate = appDelegate
+
+        // Initialize @AppStorage with note-specific keys
+        _noteContent = AppStorage(wrappedValue: "", "note_\(noteId.uuidString)_content")
+        _selectedFont = AppStorage(wrappedValue: "regular", "note_\(noteId.uuidString)_font")
+        _fontSize = AppStorage(wrappedValue: 24, "note_\(noteId.uuidString)_fontSize")
+        _fontColorName = AppStorage(wrappedValue: "blue", "note_\(noteId.uuidString)_fontColor")
+        _backgroundColorName = AppStorage(wrappedValue: "yellow", "note_\(noteId.uuidString)_backgroundColor")
+        _alwaysOnTop = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_alwaysOnTop")
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,16 +39,24 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .help("Settings")
 
+                Button(action: { appDelegate.createNewNote() }) {
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .help("New Note")
+
                 Spacer()
 
                 // Close button
-                Button(action: { NSApplication.shared.terminate(nil) }) {
+                Button(action: { appDelegate.closeNote(id: noteId) }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 12))
                         .foregroundColor(.gray.opacity(0.6))
                 }
                 .buttonStyle(.plain)
-                .help("Quit")
+                .help("Close Note")
             }
             .padding(.horizontal, 12)
             .padding(.top, 8)
@@ -59,7 +83,9 @@ struct ContentView: View {
                 fontSize: $fontSize,
                 fontColorName: $fontColorName,
                 backgroundColorName: $backgroundColorName,
-                alwaysOnTop: $alwaysOnTop
+                alwaysOnTop: $alwaysOnTop,
+                noteId: noteId,
+                appDelegate: appDelegate
             )
         }
         .onAppear {
@@ -119,6 +145,9 @@ struct SettingsView: View {
     @Binding var fontColorName: String
     @Binding var backgroundColorName: String
     @Binding var alwaysOnTop: Bool
+
+    let noteId: UUID
+    let appDelegate: AppDelegate
 
     @Environment(\.dismiss) var dismiss
 
@@ -223,7 +252,7 @@ struct SettingsView: View {
             // Always on top toggle
             Toggle("Always on Top", isOn: $alwaysOnTop)
                 .onChange(of: alwaysOnTop) { newValue in
-                    updateWindowLevel(alwaysOnTop: newValue)
+                    appDelegate.updateWindowLevel(for: noteId, alwaysOnTop: newValue)
                 }
 
             Spacer()
@@ -240,14 +269,8 @@ struct SettingsView: View {
         .padding(24)
         .frame(width: 400, height: 550)
     }
-
-    func updateWindowLevel(alwaysOnTop: Bool) {
-        if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
-            appDelegate.updateWindowLevel(alwaysOnTop: alwaysOnTop)
-        }
-    }
 }
 
 #Preview {
-    ContentView()
+    ContentView(noteId: UUID(), appDelegate: AppDelegate())
 }
