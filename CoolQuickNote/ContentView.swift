@@ -242,8 +242,8 @@ struct SettingsView: View {
     }
 
     func updateWindowLevel(alwaysOnTop: Bool) {
-        if let window = NSApplication.shared.windows.first {
-            window.level = alwaysOnTop ? .floating : .normal
+        if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
+            appDelegate.updateWindowLevel(alwaysOnTop: alwaysOnTop)
         }
     }
 }
