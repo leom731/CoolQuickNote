@@ -3,7 +3,7 @@ import AppKit
 
 struct ContentView: View {
     let noteId: UUID
-    let appDelegate: AppDelegate
+    @ObservedObject var appDelegate: AppDelegate
 
     @AppStorage var noteContent: String
     @AppStorage var selectedFont: String
@@ -54,14 +54,16 @@ struct ContentView: View {
 
                 Spacer()
 
-                // Close button
-                Button(action: { appDelegate.closeNote(id: noteId) }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(.gray.opacity(0.6))
+                // Close button - only show if more than one note is open
+                if appDelegate.noteCount > 1 {
+                    Button(action: { appDelegate.closeNote(id: noteId) }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close Note")
                 }
-                .buttonStyle(.plain)
-                .help("Close Note")
             }
             .padding(.horizontal, 12)
             .padding(.top, 8)

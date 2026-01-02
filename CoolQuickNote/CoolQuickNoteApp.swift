@@ -49,11 +49,16 @@ struct CoolQuickNoteApp: App {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     var notePanels: [UUID: NSPanel] = [:]
     private let notesKey = "savedNotes"
+    private var statusItem: NSStatusItem?
+    @Published var noteCount: Int = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Set up menu bar icon
+        setupMenuBarIcon()
+
         // Load existing notes or create a default one
         let savedNotes = loadNotes()
 
@@ -68,7 +73,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func createNewNote() {
+    private func setupMenuBarIcon() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+
+        if let button = statusItem?.button {
+            button.image = NSImage(systemSymbolName: "note.text", accessibilityDescription: "CoolQuickNote")
+            button.image?.isTemplate = true
+        }
+
+        let menu = NSMenu()
+
+        menu.addItem(NSMenuItem(title: "New Note", action: #selector(createNewNote), keyEquivalent: "n"))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Quit CoolQuickNote", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+
+        statusItem?.menu = menu
+    }
+
+    @objc func createNewNote() {
         let noteData = NoteData()
         createNotePanel(with: noteData)
         saveNotes()
@@ -122,6 +144,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         notePanels[noteData.id] = panel
+        noteCount = notePanels.count
     }
 
     func closeNote(id: UUID) {
@@ -130,6 +153,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             saveNoteWindowFrame(id: id, frame: panel.frame)
             panel.close()
             notePanels.removeValue(forKey: id)
+            noteCount = notePanels.count
             saveNotes()
         }
     }
@@ -143,6 +167,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            // No visible windows - create a new note when dock icon is clicked
+            createNewNote()
+        }
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
