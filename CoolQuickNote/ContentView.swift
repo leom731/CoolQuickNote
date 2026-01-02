@@ -198,103 +198,116 @@ struct SettingsView: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Settings")
-                .font(.title2)
-                .bold()
-
-            // Font selection
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Font Style")
-                    .font(.headline)
-
-                Picker("", selection: $selectedFont) {
-                    Text("Regular").tag("regular")
-                    Text("Handwritten").tag("handwritten")
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+        VStack(spacing: 0) {
+            // Title at the top
+            HStack {
+                Text("Settings")
+                    .font(.title2)
+                    .bold()
+                Spacer()
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
 
-            // Font size
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Font Size: \(Int(fontSize))pt")
-                    .font(.headline)
+            // Scrollable content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Font selection
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Font Style")
+                            .font(.headline)
 
-                Slider(value: $fontSize, in: 10...32, step: 1)
-            }
+                        Picker("", selection: $selectedFont) {
+                            Text("Regular").tag("regular")
+                            Text("Handwritten").tag("handwritten")
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
 
-            // Pen color
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Pen Color")
-                    .font(.headline)
+                    // Font size
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Font Size: \(Int(fontSize))pt")
+                            .font(.headline)
 
-                HStack(spacing: 16) {
-                    ForEach([("blue", Color(red: 0.0, green: 0.4, blue: 0.8), "Blue"),
-                             ("red", Color(red: 0.8, green: 0.0, blue: 0.0), "Red"),
-                             ("black", Color.black, "Black")], id: \.0) { option in
-                        Button(action: {
-                            fontColorName = option.0
-                        }) {
-                            VStack(spacing: 4) {
-                                Circle()
-                                    .fill(option.1)
-                                    .frame(width: 40, height: 40)
-                                    .overlay(
+                        Slider(value: $fontSize, in: 10...32, step: 1)
+                    }
+
+                    // Pen color
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Pen Color")
+                            .font(.headline)
+
+                        HStack(spacing: 16) {
+                            ForEach([("blue", Color(red: 0.0, green: 0.4, blue: 0.8), "Blue"),
+                                     ("red", Color(red: 0.8, green: 0.0, blue: 0.0), "Red"),
+                                     ("black", Color.black, "Black")], id: \.0) { option in
+                                Button(action: {
+                                    fontColorName = option.0
+                                }) {
+                                    VStack(spacing: 4) {
                                         Circle()
-                                            .stroke(fontColorName == option.0 ? Color.blue : Color.gray.opacity(0.3), lineWidth: fontColorName == option.0 ? 3 : 1)
-                                    )
+                                            .fill(option.1)
+                                            .frame(width: 40, height: 40)
+                                            .overlay(
+                                                Circle()
+                                                    .stroke(fontColorName == option.0 ? Color.blue : Color.gray.opacity(0.3), lineWidth: fontColorName == option.0 ? 3 : 1)
+                                            )
 
-                                Text(option.2)
-                                    .font(.caption)
-                                    .foregroundColor(.primary)
+                                        Text(option.2)
+                                            .font(.caption)
+                                            .foregroundColor(.primary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
-                        .buttonStyle(.plain)
                     }
-                }
-            }
 
-            // Background color
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Background Color")
-                    .font(.headline)
+                    // Background color
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Background Color")
+                            .font(.headline)
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 60))], spacing: 12) {
-                    ForEach(colorOptions, id: \.name) { option in
-                        Button(action: {
-                            backgroundColorName = option.name
-                        }) {
-                            VStack(spacing: 4) {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(option.color)
-                                    .frame(width: 50, height: 50)
-                                    .overlay(
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 60))], spacing: 12) {
+                            ForEach(colorOptions, id: \.name) { option in
+                                Button(action: {
+                                    backgroundColorName = option.name
+                                }) {
+                                    VStack(spacing: 4) {
                                         RoundedRectangle(cornerRadius: 8)
-                                            .stroke(backgroundColorName == option.name ? Color.blue : Color.gray.opacity(0.3), lineWidth: backgroundColorName == option.name ? 3 : 1)
-                                    )
+                                            .fill(option.color)
+                                            .frame(width: 50, height: 50)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(backgroundColorName == option.name ? Color.blue : Color.gray.opacity(0.3), lineWidth: backgroundColorName == option.name ? 3 : 1)
+                                            )
 
-                                Text(option.display)
-                                    .font(.caption)
-                                    .foregroundColor(.primary)
+                                        Text(option.display)
+                                            .font(.caption)
+                                            .foregroundColor(.primary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
-                        .buttonStyle(.plain)
                     }
+
+                    Divider()
+                        .padding(.vertical, 4)
+
+                    // Always on top toggle
+                    Toggle("Always on Top", isOn: $alwaysOnTop)
+                        .onChange(of: alwaysOnTop) { newValue in
+                            appDelegate.updateWindowLevel(for: noteId, alwaysOnTop: newValue)
+                        }
                 }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
             }
 
-            Divider()
-
-            // Always on top toggle
-            Toggle("Always on Top", isOn: $alwaysOnTop)
-                .onChange(of: alwaysOnTop) { newValue in
-                    appDelegate.updateWindowLevel(for: noteId, alwaysOnTop: newValue)
-                }
-
-            Spacer()
-
-            // Close button
+            // Done button at the bottom
             HStack {
                 Spacer()
                 Button("Done") {
@@ -302,8 +315,10 @@ struct SettingsView: View {
                 }
                 .keyboardShortcut(.defaultAction)
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(Color(NSColor.windowBackgroundColor))
         }
-        .padding(24)
         .frame(width: 400, height: 550)
     }
 }
