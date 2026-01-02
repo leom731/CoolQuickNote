@@ -202,55 +202,10 @@ private final class ActivatingPanel: NSPanel {
 
     override func awakeFromNib() {
         super.awakeFromNib()
-        setupTrackingArea()
-        hideWindowButtons()
     }
 
     override func makeKeyAndOrderFront(_ sender: Any?) {
         super.makeKeyAndOrderFront(sender)
-        if trackingArea == nil {
-            setupTrackingArea()
-            hideWindowButtons()
-        }
-    }
-
-    private func setupTrackingArea() {
-        // Remove existing tracking area if any
-        if let existingArea = trackingArea {
-            contentView?.removeTrackingArea(existingArea)
-        }
-
-        // Create tracking area for the entire window to detect hover
-        let area = NSTrackingArea(
-            rect: NSRect(x: 0, y: 0, width: frame.width, height: frame.height),
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        contentView?.addTrackingArea(area)
-        trackingArea = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        super.mouseEntered(with: event)
-        showWindowButtons()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
-        hideWindowButtons()
-    }
-
-    private func hideWindowButtons() {
-        standardWindowButton(.closeButton)?.isHidden = true
-        standardWindowButton(.miniaturizeButton)?.isHidden = true
-        standardWindowButton(.zoomButton)?.isHidden = true
-    }
-
-    private func showWindowButtons() {
-        standardWindowButton(.closeButton)?.isHidden = false
-        standardWindowButton(.miniaturizeButton)?.isHidden = false
-        standardWindowButton(.zoomButton)?.isHidden = false
     }
 
     override func sendEvent(_ event: NSEvent) {

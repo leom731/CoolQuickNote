@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct ContentView: View {
     let noteId: UUID
@@ -13,6 +14,8 @@ struct ContentView: View {
 
     @State private var showSettings = false
     @FocusState private var isTextEditorFocused: Bool
+    @State private var isHoveringWindow = false
+    @State private var currentWindow: NSWindow?
 
     init(noteId: UUID, appDelegate: AppDelegate) {
         self.noteId = noteId
@@ -77,6 +80,10 @@ struct ContentView: View {
         .background(currentBackgroundColor)
         .cornerRadius(8)
         .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+        .onHover { hovering in
+            isHoveringWindow = hovering
+        }
+        .background(WindowAccessor(window: $currentWindow))
         .sheet(isPresented: $showSettings) {
             SettingsView(
                 selectedFont: $selectedFont,
@@ -92,6 +99,36 @@ struct ContentView: View {
             // Focus the text editor on launch
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isTextEditorFocused = true
+            }
+        }
+        .onChange(of: currentWindow) { window in
+            if window != nil {
+                // Start with buttons visible, then update based on state
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    updateTrafficLightButtons(visible: shouldShowButtons)
+                }
+            }
+        }
+        .onChange(of: isHoveringWindow) { _ in
+            updateTrafficLightButtons(visible: shouldShowButtons)
+        }
+        .onChange(of: isTextEditorFocused) { _ in
+            updateTrafficLightButtons(visible: shouldShowButtons)
+        }
+    }
+
+    var shouldShowButtons: Bool {
+        isHoveringWindow || isTextEditorFocused
+    }
+
+    func updateTrafficLightButtons(visible: Bool) {
+        guard let window = currentWindow else { return }
+
+        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+
+        for buttonType in buttons {
+            if let button = window.standardWindowButton(buttonType) {
+                button.isHidden = !visible
             }
         }
     }
@@ -268,6 +305,25 @@ struct SettingsView: View {
         }
         .padding(24)
         .frame(width: 400, height: 550)
+    }
+}
+
+// Helper to access the window from SwiftUI
+struct WindowAccessor: NSViewRepresentable {
+    @Binding var window: NSWindow?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            self.window = view.window
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            self.window = nsView.window
+        }
     }
 }
 
