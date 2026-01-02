@@ -211,7 +211,13 @@ private final class ActivatingPanel: NSPanel {
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            NSApp.activate(ignoringOtherApps: true)
+            makeKeyAndOrderFront(nil)  // Keep the clicked panel key in the current space without hopping spaces
+            if !isKeyWindow {
+                makeKey()  // Ensure window becomes key so traffic lights reappear after returning to the app
+            }
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)  // Ensure app becomes active so traffic lights can appear
+            }
         default:
             break
         }

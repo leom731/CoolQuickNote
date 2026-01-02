@@ -104,8 +104,14 @@ struct ContentView: View {
             }
 
             // Sync initial app/window state for button visibility
-            isAppActive = NSApp?.isActive ?? true
+            isAppActive = NSApp.isActive
             isWindowKey = currentWindow?.isKeyWindow ?? false
+
+            // Ensure buttons are visible on initial appearance
+            DispatchQueue.main.async {
+                currentWindow = resolveWindow()
+                updateTrafficLightButtons(visible: shouldShowButtons)
+            }
         }
         .onChange(of: currentWindow) { window in
             if window != nil {
@@ -125,38 +131,71 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             isAppActive = true
-            updateTrafficLightButtons(visible: shouldShowButtons)
+            // Refresh window reference and update buttons with a small delay to ensure window is ready
+            DispatchQueue.main.async {
+                currentWindow = resolveWindow()
+                updateTrafficLightButtons(visible: shouldShowButtons)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             isAppActive = false
             updateTrafficLightButtons(visible: shouldShowButtons)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
-            guard let window = notification.object as? NSWindow, window == currentWindow else { return }
+            if let window = notification.object as? NSWindow {
+                currentWindow = window
+            }
             isWindowKey = true
+            // Update buttons immediately and again after a short delay to handle timing issues
             updateTrafficLightButtons(visible: shouldShowButtons)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                updateTrafficLightButtons(visible: shouldShowButtons)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
-            guard let window = notification.object as? NSWindow, window == currentWindow else { return }
+            if let window = notification.object as? NSWindow {
+                currentWindow = window
+            }
             isWindowKey = false
             updateTrafficLightButtons(visible: shouldShowButtons)
         }
     }
 
     var shouldShowButtons: Bool {
-        isAppActive && isWindowKey && (isHoveringWindow || isTextEditorFocused)
+        // Make traffic lights full opacity when app is active; dimmed when inactive
+        isAppActive
     }
 
     func updateTrafficLightButtons(visible: Bool) {
-        guard let window = currentWindow else { return }
+        guard let window = resolveWindow() else { return }
 
         let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
         for buttonType in buttons {
             if let button = window.standardWindowButton(buttonType) {
-                button.isHidden = !visible
+                // Instead of hiding, dim the buttons when inactive
+                button.alphaValue = visible ? 1.0 : 0.3
             }
         }
+    }
+
+    private func resolveWindow() -> NSWindow? {
+        if let window = currentWindow {
+            return window
+        }
+        if let key = NSApp?.keyWindow {
+            currentWindow = key
+            return key
+        }
+        if let main = NSApp?.mainWindow {
+            currentWindow = main
+            return main
+        }
+        if let first = NSApp?.windows.first {
+            currentWindow = first
+            return first
+        }
+        return nil
     }
 
     var currentFont: Font {
