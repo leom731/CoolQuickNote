@@ -32,6 +32,21 @@ struct ContentView: View {
         _alwaysOnTop = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_alwaysOnTop")
     }
 
+    // Format current date and time for note header
+    private func formatCurrentDateTime() -> String {
+        let formatter = DateFormatter()
+
+        // Date format: "Jan 03, 2026 Sat"
+        formatter.dateFormat = "MMM dd, yyyy EEE"
+        let dateString = formatter.string(from: Date())
+
+        // Time format: "9:10 PM"
+        formatter.dateFormat = "h:mm a"
+        let timeString = formatter.string(from: Date())
+
+        return "\(dateString)\n\(timeString)\n"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Settings bar
@@ -100,6 +115,11 @@ struct ContentView: View {
             )
         }
         .onAppear {
+            // Insert date/time if note is blank
+            if noteContent.isEmpty {
+                noteContent = formatCurrentDateTime()
+            }
+
             // Focus the text editor on launch
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isTextEditorFocused = true
