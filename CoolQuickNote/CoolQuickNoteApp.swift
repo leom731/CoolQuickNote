@@ -176,14 +176,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, alwaysOnTop: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>) {
         // If settings panel already exists for this note, close it
         if let existingPanel = settingsPanels[noteId] {
+            // Remove child window relationship before closing
+            if let notePanel = notePanels[noteId] {
+                notePanel.removeChildWindow(existingPanel)
+            }
             existingPanel.close()
             settingsPanels.removeValue(forKey: noteId)
             settingsPanelDelegates.removeValue(forKey: noteId)
             return
         }
 
-        // Create a new settings panel
-        let settingsPanel = NSPanel(
+        // Create a new settings panel using ActivatingPanel for fullscreen compatibility
+        let settingsPanel = ActivatingPanel(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 550),
             styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered,
@@ -215,11 +219,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         let hostingView = NSHostingView(rootView: settingsView)
         settingsPanel.contentView = hostingView
 
-        // Position the panel near the note window
+        // Position the panel near the note window on the same screen/space
         if let notePanel = notePanels[noteId] {
+            // Position relative to the note
             let noteFrame = notePanel.frame
             let xOffset: CGFloat = noteFrame.maxX + 20
             settingsPanel.setFrameTopLeftPoint(NSPoint(x: xOffset, y: noteFrame.maxY))
+
+            // Make settings panel a child of note panel to keep them on same space
+            notePanel.addChildWindow(settingsPanel, ordered: .above)
         } else {
             settingsPanel.center()
         }
@@ -229,7 +237,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         settingsPanel.delegate = delegate
         settingsPanelDelegates[noteId] = delegate
 
-        settingsPanel.makeKeyAndOrderFront(nil)
+        // Show panel on current workspace, even in fullscreen mode
+        settingsPanel.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
         settingsPanels[noteId] = settingsPanel
     }
 
@@ -308,6 +318,12 @@ fileprivate class SettingsPanelDelegate: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        // Remove child window relationship
+        if let settingsPanel = appDelegate?.settingsPanels[noteId],
+           let notePanel = appDelegate?.notePanels[noteId] {
+            notePanel.removeChildWindow(settingsPanel)
+        }
+
         appDelegate?.settingsPanels.removeValue(forKey: noteId)
         appDelegate?.settingsPanelDelegates.removeValue(forKey: noteId)
     }
@@ -329,12 +345,16 @@ private final class ActivatingPanel: NSPanel {
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            makeKeyAndOrderFront(nil)  // Keep the clicked panel key in the current space without hopping spaces
-            if !isKeyWindow {
-                makeKey()  // Ensure window becomes key so traffic lights reappear after returning to the app
-            }
-            if !NSApp.isActive {
-                NSApp.activate(ignoringOtherApps: true)  // Ensure app becomes active so traffic lights can appear
+            // Dispatch window activation asynchronously to avoid priority inversion
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.makeKeyAndOrderFront(nil)  // Keep the clicked panel key in the current space without hopping spaces
+                if !self.isKeyWindow {
+                    self.makeKey()  // Ensure window becomes key so traffic lights reappear after returning to the app
+                }
+                if !NSApp.isActive {
+                    NSApp.activate(ignoringOtherApps: true)  // Ensure app becomes active so traffic lights can appear
+                }
             }
         default:
             break
