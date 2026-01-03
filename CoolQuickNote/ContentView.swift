@@ -76,7 +76,10 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .help("Settings")
 
-                Button(action: { appDelegate.createNewNote() }) {
+                Button(action: {
+                    appDelegate.activeNoteId = noteId
+                    appDelegate.createNewNote()
+                }) {
                     Image(systemName: "plus.circle")
                         .font(.system(size: 12))
                         .foregroundColor(.gray.opacity(0.6))
@@ -146,7 +149,10 @@ struct ContentView: View {
                 Label("Settings", systemImage: "gear")
             }
 
-            Button(action: { appDelegate.createNewNote() }) {
+            Button(action: {
+                appDelegate.activeNoteId = noteId
+                appDelegate.createNewNote()
+            }) {
                 Label("New Note", systemImage: "plus.circle")
             }
 

@@ -62,10 +62,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private let notesKey = "savedNotes"
     private var statusItem: NSStatusItem?
     @Published var noteCount: Int = 0
+    @Published var activeNoteId: UUID?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set up menu bar icon
         setupMenuBarIcon()
+
+        // Set up notification observer to track active note
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey(_:)),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
 
         // Load existing notes or create a default one
         let savedNotes = loadNotes()
@@ -98,10 +107,90 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         statusItem?.menu = menu
     }
 
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              let panel = window as? ActivatingPanel,
+              let noteId = panel.noteId else { return }
+        activeNoteId = noteId
+    }
+
     @objc func createNewNote() {
-        let noteData = NoteData()
+        // Get properties from active note if it exists
+        var windowFrame: CGRect? = nil
+        var opacity: Double = 1.0
+
+        if let sourceId = activeNoteId,
+           let sourcePanel = notePanels[sourceId] {
+            // Copy size and position from source note, placing the new note beside it without overlap
+            let targetSize = sourcePanel.frame.size
+            windowFrame = nextWindowFrame(beside: sourcePanel, targetSize: targetSize)
+
+            // Copy opacity from UserDefaults
+            if let storedOpacity = UserDefaults.standard.object(forKey: "note_\(sourceId.uuidString)_opacity") as? Double {
+                opacity = storedOpacity
+            }
+        }
+
+        let noteData = NoteData(noteOpacity: opacity, windowFrame: windowFrame)
         createNotePanel(with: noteData)
         saveNotes()
+    }
+
+    private func nextWindowFrame(beside sourcePanel: NSPanel, targetSize: CGSize) -> CGRect {
+        let spacing: CGFloat = 24
+        let sourceFrame = sourcePanel.frame
+        let visibleFrame = sourcePanel.screen?.visibleFrame ??
+            NSScreen.main?.visibleFrame ??
+            NSScreen.screens.first?.visibleFrame ??
+            NSRect(origin: sourceFrame.origin, size: targetSize)
+
+        func clampedY(_ proposedY: CGFloat) -> CGFloat {
+            min(max(proposedY, visibleFrame.minY), visibleFrame.maxY - targetSize.height)
+        }
+
+        func clampedX(_ proposedX: CGFloat) -> CGFloat {
+            min(max(proposedX, visibleFrame.minX), visibleFrame.maxX - targetSize.width)
+        }
+
+        // First try to the right of the source note
+        if sourceFrame.maxX + spacing + targetSize.width <= visibleFrame.maxX {
+            let origin = CGPoint(x: sourceFrame.maxX + spacing, y: clampedY(sourceFrame.origin.y))
+            let candidate = CGRect(origin: origin, size: targetSize)
+            return candidate
+        }
+
+        // If it won't fit, try to the left
+        if sourceFrame.minX - spacing - targetSize.width >= visibleFrame.minX {
+            let origin = CGPoint(x: sourceFrame.minX - spacing - targetSize.width, y: clampedY(sourceFrame.origin.y))
+            let candidate = CGRect(origin: origin, size: targetSize)
+            if visibleFrame.contains(candidate) {
+                return candidate
+            }
+        }
+
+        // Finally, try below the source note
+        let belowY = sourceFrame.minY - spacing - targetSize.height
+        if belowY >= visibleFrame.minY {
+            let origin = CGPoint(x: clampedX(sourceFrame.origin.x), y: belowY)
+            let candidate = CGRect(origin: origin, size: targetSize)
+            if visibleFrame.contains(candidate) {
+                return candidate
+            }
+        }
+
+        // Try above the source note if there is space
+        let aboveY = sourceFrame.maxY + spacing
+        if aboveY + targetSize.height <= visibleFrame.maxY {
+            let origin = CGPoint(x: clampedX(sourceFrame.origin.x), y: aboveY)
+            let candidate = CGRect(origin: origin, size: targetSize)
+            if visibleFrame.contains(candidate) {
+                return candidate
+            }
+        }
+
+        // Fallback: keep the window visible, even if we can't avoid overlap entirely
+        let origin = CGPoint(x: clampedX(sourceFrame.origin.x + spacing), y: clampedY(sourceFrame.origin.y))
+        return CGRect(origin: origin, size: targetSize)
     }
 
     private func createNotePanel(with noteData: NoteData) {
