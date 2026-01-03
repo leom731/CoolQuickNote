@@ -11,8 +11,12 @@ struct ContentView: View {
     @AppStorage var fontColorName: String
     @AppStorage var backgroundColorName: String
     @AppStorage var alwaysOnTop: Bool
+    @AppStorage var dynamicSizingEnabled: Bool
 
     @State private var showSettings = false
+    @State private var windowSize: CGSize = .zero
+    @State private var effectiveFontSize: Double = 24.0
+    @State private var shouldUseScrollMode: Bool = false
     @FocusState private var isTextEditorFocused: Bool
     @State private var isHoveringWindow = false
     @State private var currentWindow: NSWindow?
@@ -30,6 +34,7 @@ struct ContentView: View {
         _fontColorName = AppStorage(wrappedValue: "blue", "note_\(noteId.uuidString)_fontColor")
         _backgroundColorName = AppStorage(wrappedValue: "yellow", "note_\(noteId.uuidString)_backgroundColor")
         _alwaysOnTop = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_alwaysOnTop")
+        _dynamicSizingEnabled = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_dynamicSizing")
     }
 
     // Format current date and time for note header
@@ -84,16 +89,29 @@ struct ContentView: View {
             .padding(.top, 8)
             .padding(.bottom, 4)
 
-            // Text editor
-            TextEditor(text: $noteContent)
-                .font(currentFont)
-                .foregroundColor(currentFontColor)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .focused($isTextEditorFocused)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Text editor with GeometryReader for dynamic sizing
+            GeometryReader { geometry in
+                TextEditor(text: $noteContent)
+                    .font(dynamicFont)
+                    .foregroundColor(currentFontColor)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                    .focused($isTextEditorFocused)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onChange(of: geometry.size) { newSize in
+                        updateDynamicSizing(for: newSize)
+                    }
+                    .onChange(of: noteContent) { _ in
+                        if dynamicSizingEnabled && !shouldUseScrollMode {
+                            updateDynamicSizing(for: windowSize)
+                        }
+                    }
+                    .onAppear {
+                        updateDynamicSizing(for: geometry.size)
+                    }
+            }
         }
         .frame(minWidth: 100, minHeight: 60)
         .background(currentBackgroundColor)
@@ -110,6 +128,7 @@ struct ContentView: View {
                 fontColorName: $fontColorName,
                 backgroundColorName: $backgroundColorName,
                 alwaysOnTop: $alwaysOnTop,
+                dynamicSizingEnabled: $dynamicSizingEnabled,
                 noteId: noteId,
                 appDelegate: appDelegate
             )
@@ -230,6 +249,101 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Dynamic Sizing
+
+    // Constants for dynamic sizing
+    private let baseWindowSize = CGSize(width: 300, height: 300)
+    private let baseFontSize: CGFloat = 24.0
+    private let minFontSize: CGFloat = 10.0
+    private let maxFontSize: CGFloat = 72.0
+
+    // Calculate scale factor based on window size
+    private func calculateScale(for size: CGSize) -> CGFloat {
+        let widthScale = size.width / baseWindowSize.width
+        let heightScale = size.height / baseWindowSize.height
+        // Use minimum to ensure content fits
+        return min(widthScale, heightScale)
+    }
+
+    // Calculate optimal font size based on content and available space
+    private func calculateOptimalFontSize(for text: String, in size: CGSize) -> Double {
+        guard !text.isEmpty else { return Double(baseFontSize) }
+
+        let scale = calculateScale(for: size)
+
+        // Character density heuristic: more text = smaller font
+        let characterCount = text.count
+        let availableArea = size.width * size.height
+        let characterDensity = Double(characterCount) / Double(availableArea)
+
+        // Density thresholds (tuned for readability)
+        let lowDensity: Double = 0.001  // Very little text
+        let highDensity: Double = 0.01  // Lots of text
+
+        var densityFactor: CGFloat = 1.0
+        if characterDensity < lowDensity {
+            // Sparse text: scale up more aggressively
+            densityFactor = 1.5
+        } else if characterDensity > highDensity {
+            // Dense text: scale down to fit more
+            densityFactor = 0.6
+        } else {
+            // Linear interpolation between thresholds
+            let normalizedDensity = (characterDensity - lowDensity) / (highDensity - lowDensity)
+            densityFactor = 1.5 - (0.9 * CGFloat(normalizedDensity))
+        }
+
+        // Calculate font size with scale and density adjustments
+        let calculatedSize = baseFontSize * scale * densityFactor
+
+        // Clamp to reasonable bounds
+        let clampedSize = max(minFontSize, min(maxFontSize, calculatedSize))
+
+        return Double(clampedSize)
+    }
+
+    // Determine if we should be in scroll mode (window too small)
+    private func shouldEnterScrollMode(windowSize: CGSize) -> Bool {
+        return windowSize.width < 200 || windowSize.height < 200
+    }
+
+    // Update dynamic sizing based on window size
+    private func updateDynamicSizing(for size: CGSize) {
+        guard dynamicSizingEnabled else { return }
+
+        windowSize = size
+        shouldUseScrollMode = shouldEnterScrollMode(windowSize: size)
+
+        if !shouldUseScrollMode {
+            effectiveFontSize = calculateOptimalFontSize(for: noteContent, in: size)
+        }
+    }
+
+    // The font to use based on dynamic sizing state
+    var dynamicFont: Font {
+        let size: CGFloat
+
+        if dynamicSizingEnabled {
+            if shouldUseScrollMode {
+                // In scroll mode, use a fixed readable size
+                size = 14.0
+            } else {
+                // Use dynamically calculated size
+                size = CGFloat(effectiveFontSize)
+            }
+        } else {
+            // Manual mode: use user's slider value
+            size = CGFloat(fontSize)
+        }
+
+        switch selectedFont {
+        case "handwritten":
+            return Font.custom("Bradley Hand", size: size)
+        default:
+            return Font.system(size: size)
+        }
+    }
+
     var currentFontColor: Color {
         switch fontColorName {
         case "blue":
@@ -269,6 +383,7 @@ struct SettingsView: View {
     @Binding var fontColorName: String
     @Binding var backgroundColorName: String
     @Binding var alwaysOnTop: Bool
+    @Binding var dynamicSizingEnabled: Bool
 
     let noteId: UUID
     let appDelegate: AppDelegate
@@ -313,12 +428,47 @@ struct SettingsView: View {
                         .labelsHidden()
                     }
 
-                    // Font size
+                    // Dynamic Text Sizing toggle
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Font Size: \(Int(fontSize))pt")
-                            .font(.headline)
+                        HStack {
+                            Text("Dynamic Text Sizing")
+                                .font(.headline)
+                            Spacer()
+                            Toggle("", isOn: $dynamicSizingEnabled)
+                                .labelsHidden()
+                        }
 
-                        Slider(value: $fontSize, in: 10...32, step: 1)
+                        Text("Automatically adjusts text size to fit the window")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Divider()
+                        .padding(.vertical, 4)
+
+                    // Font size (conditionally shown)
+                    if !dynamicSizingEnabled {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Font Size: \(Int(fontSize))pt")
+                                .font(.headline)
+
+                            Slider(value: $fontSize, in: 10...32, step: 1)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Font Size")
+                                    .font(.headline)
+                                Spacer()
+                                Text("Auto")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Text("Disable dynamic sizing to adjust manually")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
 
                     // Pen color
