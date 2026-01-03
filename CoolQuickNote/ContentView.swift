@@ -14,7 +14,6 @@ struct ContentView: View {
     @AppStorage var dynamicSizingEnabled: Bool
     @AppStorage var noteOpacity: Double
 
-    @State private var showSettings = false
     @State private var windowSize: CGSize = .zero
     @State private var effectiveFontSize: Double = 24.0
     @State private var shouldUseScrollMode: Bool = false
@@ -58,7 +57,18 @@ struct ContentView: View {
         VStack(spacing: 0) {
             // Settings bar
             HStack {
-                Button(action: { showSettings.toggle() }) {
+                Button(action: {
+                    appDelegate.toggleSettingsPanel(
+                        for: noteId,
+                        selectedFont: $selectedFont,
+                        fontSize: $fontSize,
+                        fontColorName: $fontColorName,
+                        backgroundColorName: $backgroundColorName,
+                        alwaysOnTop: $alwaysOnTop,
+                        dynamicSizingEnabled: $dynamicSizingEnabled,
+                        noteOpacity: $noteOpacity
+                    )
+                }) {
                     Image(systemName: "gear")
                         .font(.system(size: 12))
                         .foregroundColor(.gray.opacity(0.6))
@@ -121,7 +131,18 @@ struct ContentView: View {
         .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
         .opacity(noteOpacity)
         .contextMenu {
-            Button(action: { showSettings.toggle() }) {
+            Button(action: {
+                appDelegate.toggleSettingsPanel(
+                    for: noteId,
+                    selectedFont: $selectedFont,
+                    fontSize: $fontSize,
+                    fontColorName: $fontColorName,
+                    backgroundColorName: $backgroundColorName,
+                    alwaysOnTop: $alwaysOnTop,
+                    dynamicSizingEnabled: $dynamicSizingEnabled,
+                    noteOpacity: $noteOpacity
+                )
+            }) {
                 Label("Settings", systemImage: "gear")
             }
 
@@ -141,19 +162,6 @@ struct ContentView: View {
             isHoveringWindow = hovering
         }
         .background(WindowAccessor(window: $currentWindow))
-        .sheet(isPresented: $showSettings) {
-            SettingsView(
-                selectedFont: $selectedFont,
-                fontSize: $fontSize,
-                fontColorName: $fontColorName,
-                backgroundColorName: $backgroundColorName,
-                alwaysOnTop: $alwaysOnTop,
-                dynamicSizingEnabled: $dynamicSizingEnabled,
-                noteOpacity: $noteOpacity,
-                noteId: noteId,
-                appDelegate: appDelegate
-            )
-        }
         .onAppear {
             // Insert date/time if note is blank
             if noteContent.isEmpty {
@@ -410,8 +418,6 @@ struct SettingsView: View {
     let noteId: UUID
     let appDelegate: AppDelegate
 
-    @Environment(\.dismiss) var dismiss
-
     let colorOptions: [(name: String, color: Color, display: String)] = [
         ("yellow", Color(red: 1.0, green: 0.98, blue: 0.7), "Yellow"),
         ("pink", Color(red: 1.0, green: 0.85, blue: 0.9), "Pink"),
@@ -585,7 +591,9 @@ struct SettingsView: View {
             HStack {
                 Spacer()
                 Button("Done") {
-                    dismiss()
+                    if let settingsPanel = appDelegate.settingsPanels[noteId] {
+                        settingsPanel.close()
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
             }

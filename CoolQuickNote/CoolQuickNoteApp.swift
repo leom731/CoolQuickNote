@@ -57,6 +57,8 @@ struct CoolQuickNoteApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     var notePanels: [UUID: NSPanel] = [:]
+    var settingsPanels: [UUID: NSPanel] = [:]
+    fileprivate var settingsPanelDelegates: [UUID: SettingsPanelDelegate] = [:]
     private let notesKey = "savedNotes"
     private var statusItem: NSStatusItem?
     @Published var noteCount: Int = 0
@@ -171,6 +173,66 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         saveNotes()
     }
 
+    func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, alwaysOnTop: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>) {
+        // If settings panel already exists for this note, close it
+        if let existingPanel = settingsPanels[noteId] {
+            existingPanel.close()
+            settingsPanels.removeValue(forKey: noteId)
+            settingsPanelDelegates.removeValue(forKey: noteId)
+            return
+        }
+
+        // Create a new settings panel
+        let settingsPanel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 550),
+            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+
+        // Configure the panel
+        settingsPanel.title = "Settings"
+        settingsPanel.isFloatingPanel = true
+        settingsPanel.level = .floating
+        settingsPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        settingsPanel.isMovableByWindowBackground = true
+        settingsPanel.hidesOnDeactivate = false
+        settingsPanel.isReleasedWhenClosed = false
+
+        // Create the settings view
+        let settingsView = SettingsView(
+            selectedFont: selectedFont,
+            fontSize: fontSize,
+            fontColorName: fontColorName,
+            backgroundColorName: backgroundColorName,
+            alwaysOnTop: alwaysOnTop,
+            dynamicSizingEnabled: dynamicSizingEnabled,
+            noteOpacity: noteOpacity,
+            noteId: noteId,
+            appDelegate: self
+        )
+
+        let hostingView = NSHostingView(rootView: settingsView)
+        settingsPanel.contentView = hostingView
+
+        // Position the panel near the note window
+        if let notePanel = notePanels[noteId] {
+            let noteFrame = notePanel.frame
+            let xOffset: CGFloat = noteFrame.maxX + 20
+            settingsPanel.setFrameTopLeftPoint(NSPoint(x: xOffset, y: noteFrame.maxY))
+        } else {
+            settingsPanel.center()
+        }
+
+        // Handle panel close - store delegate to prevent deallocation
+        let delegate = SettingsPanelDelegate(noteId: noteId, appDelegate: self)
+        settingsPanel.delegate = delegate
+        settingsPanelDelegates[noteId] = delegate
+
+        settingsPanel.makeKeyAndOrderFront(nil)
+        settingsPanels[noteId] = settingsPanel
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
@@ -232,6 +294,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 UserDefaults.standard.set(encoded, forKey: notesKey)
             }
         }
+    }
+}
+
+// Delegate to handle settings panel close
+fileprivate class SettingsPanelDelegate: NSObject, NSWindowDelegate {
+    let noteId: UUID
+    weak var appDelegate: AppDelegate?
+
+    init(noteId: UUID, appDelegate: AppDelegate) {
+        self.noteId = noteId
+        self.appDelegate = appDelegate
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        appDelegate?.settingsPanels.removeValue(forKey: noteId)
+        appDelegate?.settingsPanelDelegates.removeValue(forKey: noteId)
     }
 }
 
