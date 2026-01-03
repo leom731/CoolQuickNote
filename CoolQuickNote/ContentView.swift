@@ -12,6 +12,7 @@ struct ContentView: View {
     @AppStorage var backgroundColorName: String
     @AppStorage var alwaysOnTop: Bool
     @AppStorage var dynamicSizingEnabled: Bool
+    @AppStorage var noteOpacity: Double
 
     @State private var showSettings = false
     @State private var windowSize: CGSize = .zero
@@ -35,6 +36,7 @@ struct ContentView: View {
         _backgroundColorName = AppStorage(wrappedValue: "yellow", "note_\(noteId.uuidString)_backgroundColor")
         _alwaysOnTop = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_alwaysOnTop")
         _dynamicSizingEnabled = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_dynamicSizing")
+        _noteOpacity = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_opacity")
     }
 
     // Format current date and time for note header
@@ -117,6 +119,24 @@ struct ContentView: View {
         .background(currentBackgroundColor)
         .cornerRadius(8)
         .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+        .opacity(noteOpacity)
+        .contextMenu {
+            Button(action: { showSettings.toggle() }) {
+                Label("Settings", systemImage: "gear")
+            }
+
+            Button(action: { appDelegate.createNewNote() }) {
+                Label("New Note", systemImage: "plus.circle")
+            }
+
+            Divider()
+
+            if appDelegate.noteCount > 1 {
+                Button(action: { appDelegate.closeNote(id: noteId) }) {
+                    Label("Close Note", systemImage: "xmark.circle")
+                }
+            }
+        }
         .onHover { hovering in
             isHoveringWindow = hovering
         }
@@ -129,6 +149,7 @@ struct ContentView: View {
                 backgroundColorName: $backgroundColorName,
                 alwaysOnTop: $alwaysOnTop,
                 dynamicSizingEnabled: $dynamicSizingEnabled,
+                noteOpacity: $noteOpacity,
                 noteId: noteId,
                 appDelegate: appDelegate
             )
@@ -384,6 +405,7 @@ struct SettingsView: View {
     @Binding var backgroundColorName: String
     @Binding var alwaysOnTop: Bool
     @Binding var dynamicSizingEnabled: Bool
+    @Binding var noteOpacity: Double
 
     let noteId: UUID
     let appDelegate: AppDelegate
@@ -529,6 +551,21 @@ struct SettingsView: View {
                                 .buttonStyle(.plain)
                             }
                         }
+                    }
+
+                    Divider()
+                        .padding(.vertical, 4)
+
+                    // Note Opacity
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Note Opacity: \(Int(noteOpacity * 100))%")
+                            .font(.headline)
+
+                        Slider(value: $noteOpacity, in: 0.2...1.0, step: 0.05)
+
+                        Text("Adjust transparency like the Clock app")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
 
                     Divider()

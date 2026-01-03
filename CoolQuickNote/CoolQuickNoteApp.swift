@@ -10,6 +10,7 @@ struct NoteData: Codable, Identifiable {
     var backgroundColorName: String
     var alwaysOnTop: Bool
     var dynamicSizingEnabled: Bool
+    var noteOpacity: Double
     var windowFrame: CGRect?
 
     init(id: UUID = UUID(),
@@ -20,6 +21,7 @@ struct NoteData: Codable, Identifiable {
          backgroundColorName: String = "yellow",
          alwaysOnTop: Bool = true,
          dynamicSizingEnabled: Bool = true,
+         noteOpacity: Double = 1.0,
          windowFrame: CGRect? = nil) {
         self.id = id
         self.content = content
@@ -29,6 +31,7 @@ struct NoteData: Codable, Identifiable {
         self.backgroundColorName = backgroundColorName
         self.alwaysOnTop = alwaysOnTop
         self.dynamicSizingEnabled = dynamicSizingEnabled
+        self.noteOpacity = noteOpacity
         self.windowFrame = windowFrame
     }
 }
@@ -210,6 +213,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 backgroundColorName: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_backgroundColor") ?? "yellow",
                 alwaysOnTop: UserDefaults.standard.bool(forKey: "note_\(id.uuidString)_alwaysOnTop"),
                 dynamicSizingEnabled: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_dynamicSizing") as? Bool ?? true,
+                noteOpacity: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_opacity") as? Double ?? 1.0,
                 windowFrame: panel.frame
             )
             notes.append(note)
