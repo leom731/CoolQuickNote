@@ -18,16 +18,12 @@ struct ContentView: View {
     @State private var effectiveFontSize: Double = 24.0
     @State private var shouldUseScrollMode: Bool = false
     @FocusState private var isTextEditorFocused: Bool
-    @State private var isHoveringWindow = false
     @State private var currentWindow: NSWindow?
-    @State private var isAppActive = true
-    @State private var isWindowKey = false
 
     init(noteId: UUID, appDelegate: AppDelegate) {
         self.noteId = noteId
         self.appDelegate = appDelegate
 
-        // Initialize @AppStorage with note-specific keys
         _noteContent = AppStorage(wrappedValue: "", "note_\(noteId.uuidString)_content")
         _selectedFont = AppStorage(wrappedValue: "regular", "note_\(noteId.uuidString)_font")
         _fontSize = AppStorage(wrappedValue: 24, "note_\(noteId.uuidString)_fontSize")
@@ -38,15 +34,12 @@ struct ContentView: View {
         _noteOpacity = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_opacity")
     }
 
-    // Format current date and time for note header
     private func formatCurrentDateTime() -> String {
         let formatter = DateFormatter()
 
-        // Date format: "Jan 03, 2026 Sat"
         formatter.dateFormat = "MMM dd, yyyy EEE"
         let dateString = formatter.string(from: Date())
 
-        // Time format: "9:10 PM"
         formatter.dateFormat = "h:mm a"
         let timeString = formatter.string(from: Date())
 
@@ -55,56 +48,12 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Settings bar
-            HStack {
-                Button(action: {
-                    appDelegate.toggleSettingsPanel(
-                        for: noteId,
-                        selectedFont: $selectedFont,
-                        fontSize: $fontSize,
-                        fontColorName: $fontColorName,
-                        backgroundColorName: $backgroundColorName,
-                        alwaysOnTop: $alwaysOnTop,
-                        dynamicSizingEnabled: $dynamicSizingEnabled,
-                        noteOpacity: $noteOpacity
-                    )
-                }) {
-                    Image(systemName: "gear")
-                        .font(.system(size: 12))
-                        .foregroundColor(.gray.opacity(0.6))
-                }
-                .buttonStyle(.plain)
-                .help("Settings")
+            topBar
 
-                Button(action: {
-                    appDelegate.activeNoteId = noteId
-                    appDelegate.createNewNote()
-                }) {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 12))
-                        .foregroundColor(.gray.opacity(0.6))
-                }
-                .buttonStyle(.plain)
-                .help("New Note")
-
-                Spacer()
-
-                // Close button - only show if more than one note is open
-                if appDelegate.noteCount > 1 {
-                    Button(action: { appDelegate.closeNote(id: noteId) }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.gray.opacity(0.6))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Close Note")
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
-
-            // Text editor wi undColor(currentFontColor)
+            GeometryReader { geometry in
+                TextEditor(text: $noteContent)
+                    .font(dynamicFont)
+                    .foregroundColor(currentFontColor)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
                     .focused($isTextEditorFocused)
@@ -126,219 +75,203 @@ struct ContentView: View {
         }
         .frame(minWidth: 100, minHeight: 60)
         .background(currentBackgroundColor)
-        .cornerRadius(8)
+        .cornerRadius(12)
         .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
         .opacity(noteOpacity)
         .contextMenu {
-            Button(action: {
-                appDelegate.toggleSettingsPanel(
-                    for: noteId,
-                    selectedFont: $selectedFont,
-                    fontSize: $fontSize,
-                    fontColorName: $fontColorName,
-                    backgroundColorName: $backgroundColorName,
-                    alwaysOnTop: $alwaysOnTop,
-                    dynamicSizingEnabled: $dynamicSizingEnabled,
-                    noteOpacity: $noteOpacity
-                )
-            }) {
-                Label("Settings", systemImage: "gear")
-            }
-
-            Button(action: {
-                appDelegate.activeNoteId = noteId
-                appDelegate.createNewNote()
-            }) {
-                Label("New Note", systemImage: "plus.circle")
-            }
-
+            settingsCommands
             Divider()
-
-            if appDelegate.noteCount > 1 {
-                Button(action: { appDelegate.closeNote(id: noteId) }) {
-                    Label("Close Note", systemImage: "xmark.circle")
-                }
-            }
-        }
-        .onHover { hovering in
-            isHoveringWindow = hovering
+            windowActionsMenu
         }
         .background(WindowAccessor(window: $currentWindow))
         .onAppear {
-            // Insert date/time if note is blank
             if noteContent.isEmpty {
                 noteContent = formatCurrentDateTime()
             }
 
-            // Focus the text editor on launch
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isTextEditorFocused = true
             }
 
-            // Sync initial app/window state for button visibility
-            isAppActive = NSApp.isActive
-            isWindowKey = currentWindow?.isKeyWindow ?? false
-
-            // Ensure buttons are visible on initial appearance
-            DispatchQueue.main.async {
-                currentWindow = resolveWindow()
-                updateTrafficLightButtons(visible: shouldShowButtons)
-            }
+            applyWindowChrome()
         }
-        .onChange(of: currentWindow) { window in
-            if window != nil {
-                // Start with buttons visible, then update based on state
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    updateTrafficLightButtons(visible: shouldShowButtons)
-                }
-            }
-
-            isWindowKey = window?.isKeyWindow ?? false
-        }
-        .onChange(of: isHoveringWindow) { _ in
-            updateTrafficLightButtons(visible: shouldShowButtons)
-        }
-        .onChange(of: isTextEditorFocused) { _ in
-            updateTrafficLightButtons(visible: shouldShowButtons)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            isAppActive = true
-            // Refresh window reference and update buttons with a small delay to ensure window is ready
-            DispatchQueue.main.async {
-                currentWindow = resolveWindow()
-                updateTrafficLightButtons(visible: shouldShowButtons)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
-            isAppActive = false
-            updateTrafficLightButtons(visible: shouldShowButtons)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
-            if let window = notification.object as? NSWindow {
-                currentWindow = window
-            }
-            isWindowKey = true
-            // Update buttons immediately and again after a short delay to handle timing issues
-            updateTrafficLightButtons(visible: shouldShowButtons)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                updateTrafficLightButtons(visible: shouldShowButtons)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
-            if let window = notification.object as? NSWindow {
-                currentWindow = window
-            }
-            isWindowKey = false
-            updateTrafficLightButtons(visible: shouldShowButtons)
+        .onChange(of: currentWindow) { _ in
+            applyWindowChrome()
         }
     }
 
-    var shouldShowButtons: Bool {
-        // Make traffic lights full opacity when app is active; dimmed when inactive
-        isAppActive
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            Button(action: openSettings) {
+                Image(systemName: "gear")
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .help("Settings")
+
+            Button(action: createNewNote) {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .help("New Note")
+
+            Spacer(minLength: 0)
+
+            Menu {
+                windowActionsMenu
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray.opacity(0.6))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Window actions")
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
     }
 
-    func updateTrafficLightButtons(visible: Bool) {
+    @ViewBuilder
+    private var settingsCommands: some View {
+        Button(action: openSettings) {
+            Label("Settings", systemImage: "gear")
+        }
+
+        Button(action: createNewNote) {
+            Label("New Note", systemImage: "plus.circle")
+        }
+    }
+
+    @ViewBuilder
+    private var windowActionsMenu: some View {
+        Button("Minimize", systemImage: "minus.square") {
+            minimizeCurrentWindow()
+        }
+        .disabled(resolveWindow() == nil)
+
+        Button("Zoom", systemImage: "arrow.up.left.and.arrow.down.right") {
+            toggleZoomCurrentWindow()
+        }
+        .disabled(resolveWindow() == nil)
+
+        Divider()
+
+        Button("Close Note", systemImage: "xmark.circle") {
+            closeNote()
+        }
+    }
+
+    private func openSettings() {
+        appDelegate.toggleSettingsPanel(
+            for: noteId,
+            selectedFont: $selectedFont,
+            fontSize: $fontSize,
+            fontColorName: $fontColorName,
+            backgroundColorName: $backgroundColorName,
+            alwaysOnTop: $alwaysOnTop,
+            dynamicSizingEnabled: $dynamicSizingEnabled,
+            noteOpacity: $noteOpacity
+        )
+    }
+
+    private func createNewNote() {
+        appDelegate.activeNoteId = noteId
+        appDelegate.createNewNote()
+    }
+
+    private func closeNote() {
+        appDelegate.closeNote(id: noteId)
+    }
+
+    private func minimizeCurrentWindow() {
+        resolveWindow()?.miniaturize(nil)
+    }
+
+    private func toggleZoomCurrentWindow() {
+        resolveWindow()?.zoom(nil)
+    }
+
+    private func applyWindowChrome() {
         guard let window = resolveWindow() else { return }
 
-        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
 
-        for buttonType in buttons {
-            if let button = window.standardWindowButton(buttonType) {
-                // Instead of hiding, dim the buttons when inactive
-                button.alphaValue = visible ? 1.0 : 0.3
-            }
+        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        buttons.forEach { window.standardWindowButton($0)?.isHidden = true }
+
+        // Round the full window frame (including title bar area) to match the content view
+        if let frameView = window.contentView?.superview {
+            frameView.wantsLayer = true
+            frameView.layer?.cornerRadius = 12
+            frameView.layer?.cornerCurve = .continuous
+            frameView.layer?.maskedCorners = [
+                .layerMinXMinYCorner, .layerMaxXMinYCorner,
+                .layerMinXMaxYCorner, .layerMaxXMaxYCorner
+            ]
+            frameView.layer?.masksToBounds = true
         }
     }
 
     private func resolveWindow() -> NSWindow? {
-        if let window = currentWindow {
-            return window
-        }
-        if let key = NSApp?.keyWindow {
-            currentWindow = key
-            return key
-        }
-        if let main = NSApp?.mainWindow {
-            currentWindow = main
-            return main
-        }
-        if let first = NSApp?.windows.first {
-            currentWindow = first
-            return first
-        }
-        return nil
-    }
-
-    var currentFont: Font {
-        let size = CGFloat(fontSize)
-        switch selectedFont {
-        case "handwritten":
-            return Font.custom("Bradley Hand", size: size)
-        default:
-            return Font.system(size: size)
-        }
+        currentWindow
+            ?? appDelegate.notePanels[noteId]
+            ?? NSApp?.keyWindow
+            ?? NSApp?.mainWindow
+            ?? NSApp?.windows.first
     }
 
     // MARK: - Dynamic Sizing
 
-    // Constants for dynamic sizing
     private let baseWindowSize = CGSize(width: 300, height: 300)
     private let baseFontSize: CGFloat = 24.0
     private let minFontSize: CGFloat = 10.0
     private let maxFontSize: CGFloat = 72.0
 
-    // Calculate scale factor based on window size
     private func calculateScale(for size: CGSize) -> CGFloat {
         let widthScale = size.width / baseWindowSize.width
         let heightScale = size.height / baseWindowSize.height
-        // Use minimum to ensure content fits
         return min(widthScale, heightScale)
     }
 
-    // Calculate optimal font size based on content and available space
     private func calculateOptimalFontSize(for text: String, in size: CGSize) -> Double {
         guard !text.isEmpty else { return Double(baseFontSize) }
 
         let scale = calculateScale(for: size)
 
-        // Character density heuristic: more text = smaller font
         let characterCount = text.count
         let availableArea = size.width * size.height
         let characterDensity = Double(characterCount) / Double(availableArea)
 
-        // Density thresholds (tuned for readability)
-        let lowDensity: Double = 0.001  // Very little text
-        let highDensity: Double = 0.01  // Lots of text
+        let lowDensity: Double = 0.001
+        let highDensity: Double = 0.01
 
         var densityFactor: CGFloat = 1.0
         if characterDensity < lowDensity {
-            // Sparse text: scale up more aggressively
             densityFactor = 1.5
         } else if characterDensity > highDensity {
-            // Dense text: scale down to fit more
             densityFactor = 0.6
         } else {
-            // Linear interpolation between thresholds
             let normalizedDensity = (characterDensity - lowDensity) / (highDensity - lowDensity)
             densityFactor = 1.5 - (0.9 * CGFloat(normalizedDensity))
         }
 
-        // Calculate font size with scale and density adjustments
         let calculatedSize = baseFontSize * scale * densityFactor
-
-        // Clamp to reasonable bounds
         let clampedSize = max(minFontSize, min(maxFontSize, calculatedSize))
 
         return Double(clampedSize)
     }
 
-    // Determine if we should be in scroll mode (window too small)
     private func shouldEnterScrollMode(windowSize: CGSize) -> Bool {
-        return windowSize.width < 200 || windowSize.height < 200
+        windowSize.width < 200 || windowSize.height < 200
     }
 
-    // Update dynamic sizing based on window size
     private func updateDynamicSizing(for size: CGSize) {
         guard dynamicSizingEnabled else { return }
 
@@ -350,20 +283,16 @@ struct ContentView: View {
         }
     }
 
-    // The font to use based on dynamic sizing state
     var dynamicFont: Font {
         let size: CGFloat
 
         if dynamicSizingEnabled {
             if shouldUseScrollMode {
-                // In scroll mode, use a fixed readable size
                 size = 14.0
             } else {
-                // Use dynamically calculated size
                 size = CGFloat(effectiveFontSize)
             }
         } else {
-            // Manual mode: use user's slider value
             size = CGFloat(fontSize)
         }
 
@@ -378,20 +307,20 @@ struct ContentView: View {
     var currentFontColor: Color {
         switch fontColorName {
         case "blue":
-            return Color(red: 0.0, green: 0.4, blue: 0.8) // Standard blue pen
+            return Color(red: 0.0, green: 0.4, blue: 0.8)
         case "red":
-            return Color(red: 0.8, green: 0.0, blue: 0.0) // Red pen
+            return Color(red: 0.8, green: 0.0, blue: 0.0)
         case "black":
             return Color.black
         default:
-            return Color(red: 0.0, green: 0.4, blue: 0.8) // Default blue
+            return Color(red: 0.0, green: 0.4, blue: 0.8)
         }
     }
 
     var currentBackgroundColor: Color {
         switch backgroundColorName {
         case "yellow":
-            return Color(red: 1.0, green: 0.98, blue: 0.7) // Classic sticky note yellow
+            return Color(red: 1.0, green: 0.98, blue: 0.7)
         case "pink":
             return Color(red: 1.0, green: 0.85, blue: 0.9)
         case "blue":
@@ -431,7 +360,6 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Title at the top
             HStack {
                 Text("Settings")
                     .font(.title2)
@@ -442,10 +370,8 @@ struct SettingsView: View {
             .padding(.top, 24)
             .padding(.bottom, 16)
 
-            // Scrollable content
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // Font selection
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Font Style")
                             .font(.headline)
@@ -458,7 +384,6 @@ struct SettingsView: View {
                         .labelsHidden()
                     }
 
-                    // Dynamic Text Sizing toggle
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("Dynamic Text Sizing")
@@ -476,7 +401,6 @@ struct SettingsView: View {
                     Divider()
                         .padding(.vertical, 4)
 
-                    // Font size (conditionally shown)
                     if !dynamicSizingEnabled {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Font Size: \(Int(fontSize))pt")
@@ -501,7 +425,6 @@ struct SettingsView: View {
                         }
                     }
 
-                    // Pen color
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Pen Color")
                             .font(.headline)
@@ -532,7 +455,6 @@ struct SettingsView: View {
                         }
                     }
 
-                    // Background color
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Background Color")
                             .font(.headline)
@@ -564,7 +486,6 @@ struct SettingsView: View {
                     Divider()
                         .padding(.vertical, 4)
 
-                    // Note Opacity
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Note Opacity: \(Int(noteOpacity * 100))%")
                             .font(.headline)
@@ -579,7 +500,6 @@ struct SettingsView: View {
                     Divider()
                         .padding(.vertical, 4)
 
-                    // Always on top toggle
                     Toggle("Always on Top", isOn: $alwaysOnTop)
                         .onChange(of: alwaysOnTop) { newValue in
                             appDelegate.updateWindowLevel(for: noteId, alwaysOnTop: newValue)
@@ -589,7 +509,6 @@ struct SettingsView: View {
                 .padding(.bottom, 16)
             }
 
-            // Done button at the bottom
             HStack {
                 Spacer()
                 Button("Done") {
@@ -607,7 +526,6 @@ struct SettingsView: View {
     }
 }
 
-// Helper to access the window from SwiftUI
 struct WindowAccessor: NSViewRepresentable {
     @Binding var window: NSWindow?
 

@@ -226,12 +226,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.isMovableByWindowBackground = false
+        panel.isMovableByWindowBackground = true
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.isRestorable = false
+        hideStandardWindowButtons(for: panel)
 
         // Set size constraints
         panel.contentMinSize = CGSize(width: 200, height: 200)
@@ -242,7 +243,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         // Apply corner radius
         hostingView.wantsLayer = true
-        hostingView.layer?.cornerRadius = 8
+        hostingView.layer?.cornerRadius = 12
         hostingView.layer?.cornerCurve = .continuous
         hostingView.layer?.masksToBounds = true
 
@@ -267,6 +268,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             notePanels.removeValue(forKey: id)
             noteCount = notePanels.count
             saveNotes()
+        }
+    }
+
+    private func hideStandardWindowButtons(for panel: NSPanel) {
+        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+
+        for type in buttons {
+            if let button = panel.standardWindowButton(type) {
+                button.isHidden = true
+            }
         }
     }
 
