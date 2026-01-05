@@ -104,11 +104,7 @@ struct ContentView: View {
             .padding(.top, 8)
             .padding(.bottom, 4)
 
-            // Text editor with GeometryReader for dynamic sizing
-            GeometryReader { geometry in
-                TextEditor(text: $noteContent)
-                    .font(dynamicFont)
-                    .foregroundColor(currentFontColor)
+            // Text editor wi undColor(currentFontColor)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
                     .focused($isTextEditorFocused)

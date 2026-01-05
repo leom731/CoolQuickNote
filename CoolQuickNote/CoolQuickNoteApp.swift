@@ -115,9 +115,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     @objc func createNewNote() {
+        let newNoteId = UUID()
+
         // Get properties from active note if it exists
         var windowFrame: CGRect? = nil
         var opacity: Double = 1.0
+        var backgroundColor = "yellow"
 
         if let sourceId = activeNoteId,
            let sourcePanel = notePanels[sourceId] {
@@ -125,13 +128,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             let targetSize = sourcePanel.frame.size
             windowFrame = nextWindowFrame(beside: sourcePanel, targetSize: targetSize)
 
-            // Copy opacity from UserDefaults
+            // Copy opacity and background color from UserDefaults
             if let storedOpacity = UserDefaults.standard.object(forKey: "note_\(sourceId.uuidString)_opacity") as? Double {
                 opacity = storedOpacity
             }
+            if let storedBackgroundColor = UserDefaults.standard.string(forKey: "note_\(sourceId.uuidString)_backgroundColor") {
+                backgroundColor = storedBackgroundColor
+            }
         }
 
-        let noteData = NoteData(noteOpacity: opacity, windowFrame: windowFrame)
+        // Seed defaults so the new note picks up the copied appearance immediately
+        UserDefaults.standard.set(opacity, forKey: "note_\(newNoteId.uuidString)_opacity")
+        UserDefaults.standard.set(backgroundColor, forKey: "note_\(newNoteId.uuidString)_backgroundColor")
+
+        let noteData = NoteData(
+            id: newNoteId,
+            backgroundColorName: backgroundColor,
+            noteOpacity: opacity,
+            windowFrame: windowFrame
+        )
         createNotePanel(with: noteData)
         saveNotes()
     }
