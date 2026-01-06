@@ -267,6 +267,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             panel.close()
             notePanels.removeValue(forKey: id)
             noteCount = notePanels.count
+            UserDefaults.standard.removeObject(forKey: "note_\(id.uuidString)_imageData")
             saveNotes()
         }
     }
@@ -461,8 +462,8 @@ private final class ActivatingPanel: NSPanel {
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
             // Dispatch window activation asynchronously to avoid priority inversion
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
+            Task(priority: .userInitiated) { @MainActor [weak self] in
+                guard let self else { return }
                 self.makeKeyAndOrderFront(nil)  // Keep the clicked panel key in the current space without hopping spaces
                 if !self.isKeyWindow {
                     self.makeKey()  // Ensure window becomes key so traffic lights reappear after returning to the app

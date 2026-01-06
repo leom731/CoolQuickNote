@@ -21,6 +21,7 @@ struct ContentView: View {
     @FocusState private var isTextEditorFocused: Bool
     @State private var currentWindow: NSWindow?
     @State private var pastedImage: NSImage?
+    private let persistenceQueue = DispatchQueue(label: "com.coolquicknote.image.persistence", qos: .userInitiated)
 
     init(noteId: UUID, appDelegate: AppDelegate) {
         self.noteId = noteId
@@ -309,20 +310,28 @@ struct ContentView: View {
     }
 
     private func persistImage(from data: Data) {
-        guard let image = NSImage(data: data) else { return }
-
-        DispatchQueue.main.async {
-            self.pastedImage = image
-            UserDefaults.standard.set(data, forKey: self.imageStorageKey)
+        let storageKey = imageStorageKey
+        persistenceQueue.async {
+            autoreleasepool {
+                guard let image = NSImage(data: data) else { return }
+                UserDefaults.standard.set(data, forKey: storageKey)
+                DispatchQueue.main.async {
+                    self.pastedImage = image
+                }
+            }
         }
     }
 
     private func persistImage(_ image: NSImage) {
-        if let data = image.tiffRepresentation {
-            persistImage(from: data)
-        } else {
-            DispatchQueue.main.async {
-                self.pastedImage = image
+        let storageKey = imageStorageKey
+        persistenceQueue.async {
+            autoreleasepool {
+                if let data = image.tiffRepresentation {
+                    UserDefaults.standard.set(data, forKey: storageKey)
+                }
+                DispatchQueue.main.async {
+                    self.pastedImage = image
+                }
             }
         }
     }
