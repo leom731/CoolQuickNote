@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     let noteId: UUID
@@ -19,6 +20,7 @@ struct ContentView: View {
     @State private var shouldUseScrollMode: Bool = false
     @FocusState private var isTextEditorFocused: Bool
     @State private var currentWindow: NSWindow?
+    @State private var pastedImage: NSImage?
 
     init(noteId: UUID, appDelegate: AppDelegate) {
         self.noteId = noteId
@@ -46,31 +48,61 @@ struct ContentView: View {
         return "\(dateString)\n\(timeString)\n"
     }
 
+    private var imageStorageKey: String {
+        "note_\(noteId.uuidString)_imageData"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             topBar
 
             GeometryReader { geometry in
-                TextEditor(text: $noteContent)
-                    .font(dynamicFont)
-                    .foregroundColor(currentFontColor)
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
-                    .focused($isTextEditorFocused)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onChange(of: geometry.size) { newSize in
-                        updateDynamicSizing(for: newSize)
+                ZStack {
+                    if let image = pastedImage {
+                        Color.clear
+                            .overlay(
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .clipped()
+                                    .padding(12)
+                            )
+                            .overlay(alignment: .topTrailing) {
+                                Button(action: clearPastedImage) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.gray.opacity(0.7))
+                                        .padding(8)
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(8)
+                                .help("Remove image")
+                            }
+                    } else {
+                        TextEditor(text: $noteContent)
+                            .font(dynamicFont)
+                            .foregroundColor(currentFontColor)
+                            .scrollContentBackground(.hidden)
+                            .background(Color.clear)
+                            .focused($isTextEditorFocused)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 12)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .onChange(of: noteContent) { _ in
+                                if dynamicSizingEnabled && !shouldUseScrollMode {
+                                    updateDynamicSizing(for: windowSize)
+                                }
+                            }
                     }
-                    .onChange(of: noteContent) { _ in
-                        if dynamicSizingEnabled && !shouldUseScrollMode {
-                            updateDynamicSizing(for: windowSize)
-                        }
-                    }
-                    .onAppear {
-                        updateDynamicSizing(for: geometry.size)
-                    }
+                }
+                .onChange(of: geometry.size) { newSize in
+                    updateDynamicSizing(for: newSize)
+                }
+                .onAppear {
+                    updateDynamicSizing(for: geometry.size)
+                }
             }
         }
         .frame(minWidth: 100, minHeight: 60)
@@ -89,6 +121,8 @@ struct ContentView: View {
                 noteContent = formatCurrentDateTime()
             }
 
+            loadStoredImage()
+
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isTextEditorFocused = true
             }
@@ -97,6 +131,9 @@ struct ContentView: View {
         }
         .onChange(of: currentWindow) { _ in
             applyWindowChrome()
+        }
+        .onPasteCommand(of: [.image, .png, .jpeg, .tiff]) { providers in
+            handleImagePaste(from: providers)
         }
     }
 
@@ -117,6 +154,14 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .help("New Note")
+
+            Button(action: pasteImageFromClipboard) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .help("Paste image from clipboard")
 
             Spacer(minLength: 0)
 
@@ -225,6 +270,71 @@ struct ContentView: View {
             ?? NSApp?.keyWindow
             ?? NSApp?.mainWindow
             ?? NSApp?.windows.first
+    }
+
+    // MARK: - Image Handling
+
+    private func handleImagePaste(from providers: [NSItemProvider]) {
+        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }) else {
+            return
+        }
+
+        let preferredTypes: [UTType] = [.png, .jpeg, .tiff]
+
+        for type in preferredTypes where provider.hasItemConformingToTypeIdentifier(type.identifier) {
+            provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, _ in
+                guard let data else { return }
+                persistImage(from: data)
+            }
+            return
+        }
+
+        provider.loadObject(ofClass: NSImage.self) { object, _ in
+            guard let image = object as? NSImage else { return }
+            persistImage(image)
+        }
+    }
+
+    private func pasteImageFromClipboard() {
+        let pasteboard = NSPasteboard.general
+
+        if let data = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff) {
+            persistImage(from: data)
+            return
+        }
+
+        if let image = NSImage(pasteboard: pasteboard) {
+            persistImage(image)
+        }
+    }
+
+    private func persistImage(from data: Data) {
+        guard let image = NSImage(data: data) else { return }
+
+        DispatchQueue.main.async {
+            self.pastedImage = image
+            UserDefaults.standard.set(data, forKey: self.imageStorageKey)
+        }
+    }
+
+    private func persistImage(_ image: NSImage) {
+        if let data = image.tiffRepresentation {
+            persistImage(from: data)
+        } else {
+            DispatchQueue.main.async {
+                self.pastedImage = image
+            }
+        }
+    }
+
+    private func loadStoredImage() {
+        guard let data = UserDefaults.standard.data(forKey: imageStorageKey) else { return }
+        persistImage(from: data)
+    }
+
+    private func clearPastedImage() {
+        pastedImage = nil
+        UserDefaults.standard.removeObject(forKey: imageStorageKey)
     }
 
     // MARK: - Dynamic Sizing
