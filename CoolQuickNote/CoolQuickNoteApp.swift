@@ -351,7 +351,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         saveNotes()
     }
 
-    func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, alwaysOnTop: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>) {
+    func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, alwaysOnTop: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>) {
         // If settings panel already exists for this note, close it
         if let existingPanel = settingsPanels[noteId] {
             // Remove child window relationship before closing
@@ -390,6 +390,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             alwaysOnTop: alwaysOnTop,
             dynamicSizingEnabled: dynamicSizingEnabled,
             noteOpacity: noteOpacity,
+            disappearOnHover: disappearOnHover,
             noteId: noteId,
             appDelegate: self
         )

@@ -14,6 +14,7 @@ struct ContentView: View {
     @AppStorage var alwaysOnTop: Bool
     @AppStorage var dynamicSizingEnabled: Bool
     @AppStorage var noteOpacity: Double
+    @AppStorage var disappearOnHover: Bool
 
     @State private var windowSize: CGSize = .zero
     @State private var effectiveFontSize: Double = 24.0
@@ -21,6 +22,8 @@ struct ContentView: View {
     @FocusState private var isTextEditorFocused: Bool
     @State private var currentWindow: NSWindow?
     @State private var pastedImage: NSImage?
+    @State private var isHovering: Bool = false
+    @State private var isCommandKeyPressed: Bool = false
     private let persistenceQueue = DispatchQueue(label: "com.coolquicknote.image.persistence", qos: .userInitiated)
 
     init(noteId: UUID, appDelegate: AppDelegate) {
@@ -35,6 +38,7 @@ struct ContentView: View {
         _alwaysOnTop = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_alwaysOnTop")
         _dynamicSizingEnabled = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_dynamicSizing")
         _noteOpacity = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_opacity")
+        _disappearOnHover = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_disappearOnHover")
     }
 
     private func formatCurrentDateTime() -> String {
@@ -51,6 +55,10 @@ struct ContentView: View {
 
     private var imageStorageKey: String {
         "note_\(noteId.uuidString)_imageData"
+    }
+
+    private var shouldHideOnHover: Bool {
+        disappearOnHover && isHovering && !isCommandKeyPressed
     }
 
     var body: some View {
@@ -110,7 +118,19 @@ struct ContentView: View {
         .background(currentBackgroundColor)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
-        .opacity(noteOpacity)
+        .opacity(shouldHideOnHover ? 0 : noteOpacity)
+        .animation(.easeInOut(duration: 0.2), value: isHovering)
+        .animation(.easeInOut(duration: 0.2), value: isCommandKeyPressed)
+        .animation(.easeInOut(duration: 0.2), value: noteOpacity)
+        .overlay(
+            HoverAndWindowController(
+                isHovering: $isHovering,
+                isCommandKeyPressed: $isCommandKeyPressed,
+                disappearOnHover: disappearOnHover
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+        )
         .contextMenu {
             Button(action: pasteImageFromClipboard) {
                 Label("Paste Image", systemImage: "doc.on.clipboard")
@@ -230,7 +250,8 @@ struct ContentView: View {
             backgroundColorName: $backgroundColorName,
             alwaysOnTop: $alwaysOnTop,
             dynamicSizingEnabled: $dynamicSizingEnabled,
-            noteOpacity: $noteOpacity
+            noteOpacity: $noteOpacity,
+            disappearOnHover: $disappearOnHover
         )
     }
 
@@ -473,6 +494,7 @@ struct SettingsView: View {
     @Binding var alwaysOnTop: Bool
     @Binding var dynamicSizingEnabled: Bool
     @Binding var noteOpacity: Double
+    @Binding var disappearOnHover: Bool
 
     let noteId: UUID
     let appDelegate: AppDelegate
@@ -628,6 +650,17 @@ struct SettingsView: View {
                     Divider()
                         .padding(.vertical, 4)
 
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Hide on Hover", isOn: $disappearOnHover)
+
+                        Text("Hold Command to keep the note visible while hovering")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Divider()
+                        .padding(.vertical, 4)
+
                     Toggle("Always on Top", isOn: $alwaysOnTop)
                         .onChange(of: alwaysOnTop) { newValue in
                             appDelegate.updateWindowLevel(for: noteId, alwaysOnTop: newValue)
@@ -669,6 +702,174 @@ struct WindowAccessor: NSViewRepresentable {
         DispatchQueue.main.async {
             self.window = nsView.window
         }
+    }
+}
+
+struct HoverAndWindowController: NSViewRepresentable {
+    @Binding var isHovering: Bool
+    @Binding var isCommandKeyPressed: Bool
+    let disappearOnHover: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isHovering: $isHovering, isCommandKeyPressed: $isCommandKeyPressed)
+    }
+
+    func makeNSView(context: Context) -> HoverControlView {
+        let view = HoverControlView()
+        view.coordinator = context.coordinator
+        context.coordinator.disappearOnHover = disappearOnHover
+        return view
+    }
+
+    func updateNSView(_ nsView: HoverControlView, context: Context) {
+        context.coordinator.disappearOnHover = disappearOnHover
+        nsView.refreshHoverState()
+    }
+
+    class Coordinator {
+        @Binding var isHovering: Bool
+        @Binding var isCommandKeyPressed: Bool
+        var disappearOnHover: Bool = false
+
+        private var updateWorkItem: DispatchWorkItem?
+
+        init(isHovering: Binding<Bool>, isCommandKeyPressed: Binding<Bool>) {
+            _isHovering = isHovering
+            _isCommandKeyPressed = isCommandKeyPressed
+        }
+
+        func updateWindow(_ window: NSWindow?, hovering: Bool, commandPressed: Bool) {
+            updateWorkItem?.cancel()
+
+            let shouldIgnore = hovering && !commandPressed && disappearOnHover
+            let workItem = DispatchWorkItem { [weak window] in
+                guard let window = window else { return }
+                if window.ignoresMouseEvents != shouldIgnore {
+                    window.ignoresMouseEvents = shouldIgnore
+                }
+                let shouldAllowMove = !shouldIgnore
+                if window.isMovableByWindowBackground != shouldAllowMove {
+                    window.isMovableByWindowBackground = shouldAllowMove
+                }
+                let targetAlpha: CGFloat = shouldIgnore ? 0.0 : 1.0
+                if window.alphaValue != targetAlpha {
+                    window.alphaValue = targetAlpha
+                }
+                if window.hasShadow == shouldIgnore {
+                    window.hasShadow = !shouldIgnore
+                }
+            }
+
+            updateWorkItem = workItem
+            DispatchQueue.main.async(execute: workItem)
+        }
+    }
+}
+
+final class HoverControlView: NSView {
+    weak var coordinator: HoverAndWindowController.Coordinator?
+    private var flagsMonitor: Any?
+    private var localMouseMonitor: Any?
+    private var globalMouseMonitor: Any?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupMonitors()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupMonitors()
+    }
+
+    deinit {
+        removeMonitors()
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+
+    override func layout() {
+        super.layout()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            removeMonitors()
+        } else {
+            setupMonitors()
+            refreshHoverState()
+        }
+    }
+
+    func refreshHoverState() {
+        updateHoverState(with: nil)
+    }
+
+    private func setupMonitors() {
+        if flagsMonitor == nil {
+            flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                let isPressed = event.modifierFlags.contains(.command)
+                self?.coordinator?.isCommandKeyPressed = isPressed
+                self?.updateHoverState(with: event)
+                return event
+            }
+        }
+
+        if localMouseMonitor == nil {
+            localMouseMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+            ) { [weak self] event in
+                self?.handleMouseEvent(event)
+                return event
+            }
+        }
+
+        if globalMouseMonitor == nil {
+            globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+                matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+            ) { [weak self] event in
+                self?.handleMouseEvent(event)
+            }
+        }
+    }
+
+    private func removeMonitors() {
+        if let monitor = flagsMonitor {
+            NSEvent.removeMonitor(monitor)
+            flagsMonitor = nil
+        }
+        if let monitor = localMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMouseMonitor = nil
+        }
+        if let monitor = globalMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMouseMonitor = nil
+        }
+    }
+
+    private func handleMouseEvent(_ event: NSEvent?) {
+        DispatchQueue.main.async { [weak self] in
+            self?.updateHoverState(with: event)
+        }
+    }
+
+    private func updateHoverState(with event: NSEvent?) {
+        guard let coordinator = coordinator, let window = window else { return }
+
+        let isHoveringNow = window.frame.contains(NSEvent.mouseLocation)
+        if coordinator.isHovering != isHoveringNow {
+            coordinator.isHovering = isHoveringNow
+        }
+
+        if let event = event {
+            coordinator.isCommandKeyPressed = event.modifierFlags.contains(.command)
+        }
+
+        coordinator.updateWindow(window, hovering: coordinator.isHovering, commandPressed: coordinator.isCommandKeyPressed)
     }
 }
 
