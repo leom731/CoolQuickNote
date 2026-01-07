@@ -112,6 +112,10 @@ struct ContentView: View {
         .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
         .opacity(noteOpacity)
         .contextMenu {
+            Button(action: pasteImageFromClipboard) {
+                Label("Paste Image", systemImage: "doc.on.clipboard")
+            }
+            Divider()
             settingsCommands
             Divider()
             windowActionsMenu
@@ -135,6 +139,11 @@ struct ContentView: View {
         }
         .onPasteCommand(of: [.image, .png, .jpeg, .tiff]) { providers in
             handleImagePaste(from: providers)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .quickNotePasteImage)) { notification in
+            guard let targetId = notification.userInfo?["noteId"] as? UUID else { return }
+            guard targetId == noteId else { return }
+            pasteImageFromClipboard()
         }
     }
 

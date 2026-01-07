@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Note Data Model
 struct NoteData: Codable, Identifiable {
@@ -36,6 +38,10 @@ struct NoteData: Codable, Identifiable {
     }
 }
 
+extension Notification.Name {
+    static let quickNotePasteImage = Notification.Name("com.coolquicknote.pasteImage")
+}
+
 @main
 struct CoolQuickNoteApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -50,6 +56,22 @@ struct CoolQuickNoteApp: App {
                     appDelegate.createNewNote()
                 }
                 .keyboardShortcut("n", modifiers: .command)
+            }
+            CommandGroup(replacing: .pasteboard) {
+                Button("Cut") {
+                    NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("x", modifiers: .command)
+
+                Button("Copy") {
+                    NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("c", modifiers: .command)
+
+                Button("Paste") {
+                    appDelegate.handlePasteCommand()
+                }
+                .keyboardShortcut("v", modifiers: .command)
             }
         }
     }
@@ -112,6 +134,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
               let panel = window as? ActivatingPanel,
               let noteId = panel.noteId else { return }
         activeNoteId = noteId
+    }
+
+    func handlePasteCommand() {
+        let pasteboard = NSPasteboard.general
+        if pasteboardHasImage(pasteboard),
+           let noteId = resolveActiveNoteId() {
+            NotificationCenter.default.post(
+                name: .quickNotePasteImage,
+                object: nil,
+                userInfo: ["noteId": noteId]
+            )
+            return
+        }
+
+        NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil)
+    }
+
+    private func pasteboardHasImage(_ pasteboard: NSPasteboard) -> Bool {
+        let imageTypes = [
+            UTType.image.identifier,
+            UTType.png.identifier,
+            UTType.jpeg.identifier,
+            UTType.tiff.identifier
+        ]
+
+        if pasteboard.canReadItem(withDataConformingToTypes: imageTypes) {
+            return true
+        }
+
+        return NSImage(pasteboard: pasteboard) != nil
+    }
+
+    private func resolveActiveNoteId() -> UUID? {
+        if let panel = NSApp.keyWindow as? ActivatingPanel, let noteId = panel.noteId {
+            return noteId
+        }
+        if let panel = NSApp.mainWindow as? ActivatingPanel, let noteId = panel.noteId {
+            return noteId
+        }
+        return activeNoteId
     }
 
     @objc func createNewNote() {
