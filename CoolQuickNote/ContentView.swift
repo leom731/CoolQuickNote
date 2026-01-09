@@ -805,7 +805,9 @@ final class HoverControlView: NSView {
     }
 
     func refreshHoverState() {
-        updateHoverState(with: nil)
+        DispatchQueue.main.async { [weak self] in
+            self?.updateHoverState(with: nil)
+        }
     }
 
     private func setupMonitors() {

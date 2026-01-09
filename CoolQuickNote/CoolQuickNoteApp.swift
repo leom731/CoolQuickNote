@@ -272,7 +272,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     private func createNotePanel(with noteData: NoteData) {
         // Create a floating panel
-        let initialFrame = noteData.windowFrame ?? NSRect(x: 0, y: 0, width: 300, height: 300)
+        let defaultSize = CGSize(width: 300, height: 300)
+        let initialSize = CGSize(width: defaultSize.width * 0.75, height: defaultSize.height * 0.75)
+        let initialFrame = noteData.windowFrame ?? defaultFrameForFirstLaunch(size: initialSize)
         let panel = ActivatingPanel(
             contentRect: initialFrame,
             styleMask: [.nonactivatingPanel, .titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -312,14 +314,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Set up close handler
         panel.noteId = noteData.id
 
-        if noteData.windowFrame == nil {
-            panel.center()
-        }
         panel.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
 
         notePanels[noteData.id] = panel
         noteCount = notePanels.count
+    }
+
+    private func defaultFrameForFirstLaunch(size: CGSize) -> CGRect {
+        let visibleFrame = NSScreen.main?.visibleFrame ??
+            NSScreen.screens.first?.visibleFrame ??
+            NSRect(origin: .zero, size: size)
+        let leftInset: CGFloat = 40
+        let proposedX = visibleFrame.minX + leftInset
+        let proposedY = visibleFrame.midY - (size.height / 2)
+        let clampedX = min(max(proposedX, visibleFrame.minX), visibleFrame.maxX - size.width)
+        let clampedY = min(max(proposedY, visibleFrame.minY), visibleFrame.maxY - size.height)
+        return CGRect(origin: CGPoint(x: clampedX, y: clampedY), size: size)
     }
 
     func closeNote(id: UUID) {
