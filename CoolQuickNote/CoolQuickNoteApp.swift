@@ -83,6 +83,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     fileprivate var settingsPanelDelegates: [UUID: SettingsPanelDelegate] = [:]
     private let notesKey = "savedNotes"
     private var statusItem: NSStatusItem?
+    private var spaceObserver: NSObjectProtocol?
+    private var frontAppObserver: NSObjectProtocol?
     @Published var noteCount: Int = 0
     @Published var activeNoteId: UUID?
 
@@ -109,6 +111,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             for noteData in savedNotes {
                 createNotePanel(with: noteData)
             }
+        }
+
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshNoteVisibilityForActiveSpace()
+        }
+
+        frontAppObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshNoteVisibilityForActiveSpace()
         }
     }
 
@@ -284,9 +302,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         // Configure panel to appear on all spaces including full screen
         panel.title = "CoolQuickNote"
-        panel.isFloatingPanel = true
+        panel.isFloatingPanel = noteData.alwaysOnTop
         panel.level = noteData.alwaysOnTop ? NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.popUpMenuWindow))) : .normal
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        if noteData.alwaysOnTop {
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        } else {
+            panel.collectionBehavior = [.moveToActiveSpace]
+        }
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
@@ -319,6 +341,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         notePanels[noteData.id] = panel
         noteCount = notePanels.count
+        refreshNoteVisibilityForActiveSpace()
     }
 
     private func defaultFrameForFirstLaunch(size: CGSize) -> CGRect {
@@ -357,9 +380,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func updateWindowLevel(for noteId: UUID, alwaysOnTop: Bool) {
         guard let panel = notePanels[noteId] else { return }
+        panel.isFloatingPanel = alwaysOnTop
         panel.level = alwaysOnTop ? NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.popUpMenuWindow))) : .normal
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        if alwaysOnTop {
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        } else {
+            panel.collectionBehavior = [.moveToActiveSpace]
+        }
         saveNotes()
+        refreshNoteVisibilityForActiveSpace()
     }
 
     func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, alwaysOnTop: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>) {
@@ -494,6 +523,52 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 UserDefaults.standard.set(encoded, forKey: notesKey)
             }
         }
+    }
+
+    private func refreshNoteVisibilityForActiveSpace() {
+        let activeSpaceIsFullscreen = isActiveSpaceFullscreen()
+        for (id, panel) in notePanels {
+            let alwaysOnTop = UserDefaults.standard.bool(forKey: "note_\(id.uuidString)_alwaysOnTop")
+            if !alwaysOnTop && activeSpaceIsFullscreen {
+                if panel.isVisible {
+                    panel.orderOut(nil)
+                }
+            } else if !panel.isVisible {
+                panel.orderFrontRegardless()
+            }
+        }
+    }
+
+    private func isActiveSpaceFullscreen() -> Bool {
+        guard let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier else {
+            return false
+        }
+
+        guard let windowInfo = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return false
+        }
+
+        let tolerance: CGFloat = 2
+        for screen in NSScreen.screens {
+            let screenSize = screen.frame.size
+            for info in windowInfo {
+                guard let pid = info[kCGWindowOwnerPID as String] as? pid_t,
+                      pid == frontmostPID else { continue }
+                guard let layer = info[kCGWindowLayer as String] as? Int,
+                      layer == 0 else { continue }
+                guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
+                let width = bounds["Width"] ?? 0
+                let height = bounds["Height"] ?? 0
+                if abs(width - screenSize.width) <= tolerance &&
+                    abs(height - screenSize.height) <= tolerance {
+                    return true
+                }
+            }
+        }
+        return false
     }
 }
 

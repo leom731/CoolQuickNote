@@ -224,6 +224,19 @@ struct ContentView: View {
 
     @ViewBuilder
     private var windowActionsMenu: some View {
+        Button {
+            alwaysOnTop.toggle()
+            appDelegate.updateWindowLevel(for: noteId, alwaysOnTop: alwaysOnTop)
+        } label: {
+            if alwaysOnTop {
+                Label("Always on Top", systemImage: "checkmark")
+            } else {
+                Text("Always on Top")
+            }
+        }
+
+        Divider()
+
         Button("Minimize", systemImage: "minus.square") {
             minimizeCurrentWindow()
         }
