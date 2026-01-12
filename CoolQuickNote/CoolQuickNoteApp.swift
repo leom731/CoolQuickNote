@@ -18,7 +18,7 @@ struct NoteData: Codable, Identifiable {
     init(id: UUID = UUID(),
          content: String = "",
          selectedFont: String = "regular",
-         fontSize: Double = 24,
+         fontSize: Double = 11,
          fontColorName: String = "blue",
          backgroundColorName: String = "yellow",
          stayOnThisScreen: Bool = false,
@@ -58,7 +58,7 @@ extension NoteData {
         id = try container.decode(UUID.self, forKey: .id)
         content = try container.decodeIfPresent(String.self, forKey: .content) ?? ""
         selectedFont = try container.decodeIfPresent(String.self, forKey: .selectedFont) ?? "regular"
-        fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? 24
+        fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? 11
         fontColorName = try container.decodeIfPresent(String.self, forKey: .fontColorName) ?? "blue"
         backgroundColorName = try container.decodeIfPresent(String.self, forKey: .backgroundColorName) ?? "yellow"
         if let stayOnThisScreen = try container.decodeIfPresent(Bool.self, forKey: .stayOnThisScreen) {
@@ -572,7 +572,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 id: id,
                 content: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_content") ?? "",
                 selectedFont: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_font") ?? "regular",
-                fontSize: UserDefaults.standard.double(forKey: "note_\(id.uuidString)_fontSize") != 0 ? UserDefaults.standard.double(forKey: "note_\(id.uuidString)_fontSize") : 24,
+                fontSize: UserDefaults.standard.double(forKey: "note_\(id.uuidString)_fontSize") != 0 ? UserDefaults.standard.double(forKey: "note_\(id.uuidString)_fontSize") : 11,
                 fontColorName: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_fontColor") ?? "blue",
                 backgroundColorName: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_backgroundColor") ?? "yellow",
                 stayOnThisScreen: ensureStayOnThisScreenSetting(for: id),

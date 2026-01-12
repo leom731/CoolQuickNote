@@ -17,7 +17,7 @@ struct ContentView: View {
     @AppStorage var disappearOnHover: Bool
 
     @State private var windowSize: CGSize = .zero
-    @State private var effectiveFontSize: Double = 24.0
+    @State private var effectiveFontSize: Double = 11.0
     @State private var shouldUseScrollMode: Bool = false
     @FocusState private var isTextEditorFocused: Bool
     @State private var currentWindow: NSWindow?
@@ -32,7 +32,7 @@ struct ContentView: View {
 
         _noteContent = AppStorage(wrappedValue: "", "note_\(noteId.uuidString)_content")
         _selectedFont = AppStorage(wrappedValue: "regular", "note_\(noteId.uuidString)_font")
-        _fontSize = AppStorage(wrappedValue: 24, "note_\(noteId.uuidString)_fontSize")
+        _fontSize = AppStorage(wrappedValue: 11, "note_\(noteId.uuidString)_fontSize")
         _fontColorName = AppStorage(wrappedValue: "blue", "note_\(noteId.uuidString)_fontColor")
         _backgroundColorName = AppStorage(wrappedValue: "yellow", "note_\(noteId.uuidString)_backgroundColor")
         let stayOnThisScreenKey = "note_\(noteId.uuidString)_stayOnThisScreen"
@@ -394,8 +394,8 @@ struct ContentView: View {
     // MARK: - Dynamic Sizing
 
     private let baseWindowSize = CGSize(width: 300, height: 300)
-    private let baseFontSize: CGFloat = 24.0
-    private let minFontSize: CGFloat = 10.0
+    private let baseFontSize: CGFloat = 11.0
+    private let minFontSize: CGFloat = 11.0
     private let maxFontSize: CGFloat = 72.0
 
     private func calculateScale(for size: CGSize) -> CGFloat {
