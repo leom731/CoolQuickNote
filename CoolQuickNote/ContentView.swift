@@ -19,7 +19,7 @@ struct ContentView: View {
     @State private var windowSize: CGSize = .zero
     @State private var effectiveFontSize: Double = 11.0
     @State private var shouldUseScrollMode: Bool = false
-    @FocusState private var isTextEditorFocused: Bool
+    @State private var isTextEditorFocused: Bool = false
     @State private var currentWindow: NSWindow?
     @State private var pastedImage: NSImage?
     @State private var isHovering: Bool = false
@@ -92,20 +92,21 @@ struct ContentView: View {
                                 .help("Remove image")
                             }
                     } else {
-                        TextEditor(text: $noteContent)
-                            .font(dynamicFont)
-                            .foregroundColor(currentFontColor)
-                            .scrollContentBackground(.hidden)
-                            .background(Color.clear)
-                            .focused($isTextEditorFocused)
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 12)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .onChange(of: noteContent) { _ in
-                                if dynamicSizingEnabled && !shouldUseScrollMode {
-                                    updateDynamicSizing(for: windowSize)
-                                }
+                        NoteTextEditor(
+                            text: $noteContent,
+                            isFocused: $isTextEditorFocused,
+                            font: currentNSFont,
+                            textColor: currentFontNSColor,
+                            tabSpaces: "    "
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .onChange(of: noteContent) { _ in
+                            if dynamicSizingEnabled && !shouldUseScrollMode {
+                                updateDynamicSizing(for: windowSize)
                             }
+                        }
                     }
                 }
                 .onChange(of: geometry.size) { newSize in
@@ -139,6 +140,8 @@ struct ContentView: View {
             }
             Divider()
             settingsCommands
+            Divider()
+            noteOptionsMenu
             Divider()
             windowActionsMenu
         }
@@ -221,6 +224,32 @@ struct ContentView: View {
 
         Button(action: createNewNote) {
             Label("New Note", systemImage: "plus.circle")
+        }
+    }
+
+    @ViewBuilder
+    private var noteOptionsMenu: some View {
+        Button {
+            dynamicSizingEnabled.toggle()
+            if dynamicSizingEnabled {
+                updateDynamicSizing(for: windowSize)
+            }
+        } label: {
+            if dynamicSizingEnabled {
+                Label("Dynamic Sizing", systemImage: "checkmark")
+            } else {
+                Text("Dynamic Sizing")
+            }
+        }
+
+        Button {
+            disappearOnHover.toggle()
+        } label: {
+            if disappearOnHover {
+                Label("Hide on Hover", systemImage: "checkmark")
+            } else {
+                Text("Hide on Hover")
+            }
         }
     }
 
@@ -447,7 +476,7 @@ struct ContentView: View {
         }
     }
 
-    var dynamicFont: Font {
+    var currentNSFont: NSFont {
         let size: CGFloat
 
         if dynamicSizingEnabled {
@@ -462,22 +491,22 @@ struct ContentView: View {
 
         switch selectedFont {
         case "handwritten":
-            return Font.custom("Bradley Hand", size: size)
+            return NSFont(name: "Bradley Hand", size: size) ?? NSFont.systemFont(ofSize: size)
         default:
-            return Font.system(size: size)
+            return NSFont.systemFont(ofSize: size)
         }
     }
 
-    var currentFontColor: Color {
+    var currentFontNSColor: NSColor {
         switch fontColorName {
         case "blue":
-            return Color(red: 0.0, green: 0.4, blue: 0.8)
+            return NSColor(calibratedRed: 0.0, green: 0.4, blue: 0.8, alpha: 1.0)
         case "red":
-            return Color(red: 0.8, green: 0.0, blue: 0.0)
+            return NSColor(calibratedRed: 0.8, green: 0.0, blue: 0.0, alpha: 1.0)
         case "black":
-            return Color.black
+            return NSColor.black
         default:
-            return Color(red: 0.0, green: 0.4, blue: 0.8)
+            return NSColor(calibratedRed: 0.0, green: 0.4, blue: 0.8, alpha: 1.0)
         }
     }
 
@@ -497,6 +526,110 @@ struct ContentView: View {
             return Color(red: 1.0, green: 0.92, blue: 0.8)
         default:
             return Color(red: 1.0, green: 0.98, blue: 0.7)
+        }
+    }
+}
+
+struct NoteTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    let font: NSFont
+    let textColor: NSColor
+    let tabSpaces: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = TabInsertionTextView()
+        textView.delegate = context.coordinator
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.font = font
+        textView.textColor = textColor
+        textView.string = text
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.tabSpaces = tabSpaces
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? TabInsertionTextView else { return }
+        context.coordinator.parent = self
+
+        if textView.string != text {
+            context.coordinator.isUpdating = true
+            textView.string = text
+            context.coordinator.isUpdating = false
+        }
+
+        textView.font = font
+        textView.textColor = textColor
+
+        if textView.tabSpaces != tabSpaces {
+            textView.tabSpaces = tabSpaces
+        }
+
+        if isFocused, textView.window?.firstResponder != textView {
+            DispatchQueue.main.async {
+                textView.window?.makeFirstResponder(textView)
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: NoteTextEditor
+        var isUpdating = false
+
+        init(_ parent: NoteTextEditor) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard !isUpdating,
+                  let textView = notification.object as? NSTextView else { return }
+            parent.text = textView.string
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            if !parent.isFocused {
+                parent.isFocused = true
+            }
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            if parent.isFocused {
+                parent.isFocused = false
+            }
+        }
+    }
+}
+
+final class TabInsertionTextView: NSTextView {
+    var tabSpaces: String = "    "
+
+    override func insertTab(_ sender: Any?) {
+        if isEditable {
+            insertText(tabSpaces, replacementRange: selectedRange())
+        } else {
+            super.insertTab(sender)
         }
     }
 }
