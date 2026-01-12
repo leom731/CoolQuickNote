@@ -11,7 +11,7 @@ struct ContentView: View {
     @AppStorage var fontSize: Double
     @AppStorage var fontColorName: String
     @AppStorage var backgroundColorName: String
-    @AppStorage var alwaysOnTop: Bool
+    @AppStorage var stayOnThisScreen: Bool
     @AppStorage var dynamicSizingEnabled: Bool
     @AppStorage var noteOpacity: Double
     @AppStorage var disappearOnHover: Bool
@@ -35,7 +35,9 @@ struct ContentView: View {
         _fontSize = AppStorage(wrappedValue: 24, "note_\(noteId.uuidString)_fontSize")
         _fontColorName = AppStorage(wrappedValue: "blue", "note_\(noteId.uuidString)_fontColor")
         _backgroundColorName = AppStorage(wrappedValue: "yellow", "note_\(noteId.uuidString)_backgroundColor")
-        _alwaysOnTop = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_alwaysOnTop")
+        let stayOnThisScreenKey = "note_\(noteId.uuidString)_stayOnThisScreen"
+        let stayOnThisScreenDefault = appDelegate.ensureStayOnThisScreenSetting(for: noteId)
+        _stayOnThisScreen = AppStorage(wrappedValue: stayOnThisScreenDefault, stayOnThisScreenKey)
         _dynamicSizingEnabled = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_dynamicSizing")
         _noteOpacity = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_opacity")
         _disappearOnHover = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_disappearOnHover")
@@ -225,13 +227,13 @@ struct ContentView: View {
     @ViewBuilder
     private var windowActionsMenu: some View {
         Button {
-            alwaysOnTop.toggle()
-            appDelegate.updateWindowLevel(for: noteId, alwaysOnTop: alwaysOnTop)
+            stayOnThisScreen.toggle()
+            appDelegate.updateStayOnThisScreen(for: noteId, stayOnThisScreen: stayOnThisScreen)
         } label: {
-            if alwaysOnTop {
-                Label("Always on Top", systemImage: "checkmark")
+            if stayOnThisScreen {
+                Label("Stay on This Desktop", systemImage: "checkmark")
             } else {
-                Text("Always on Top")
+                Text("Stay on This Desktop")
             }
         }
 
@@ -261,7 +263,7 @@ struct ContentView: View {
             fontSize: $fontSize,
             fontColorName: $fontColorName,
             backgroundColorName: $backgroundColorName,
-            alwaysOnTop: $alwaysOnTop,
+            stayOnThisScreen: $stayOnThisScreen,
             dynamicSizingEnabled: $dynamicSizingEnabled,
             noteOpacity: $noteOpacity,
             disappearOnHover: $disappearOnHover
@@ -504,7 +506,7 @@ struct SettingsView: View {
     @Binding var fontSize: Double
     @Binding var fontColorName: String
     @Binding var backgroundColorName: String
-    @Binding var alwaysOnTop: Bool
+    @Binding var stayOnThisScreen: Bool
     @Binding var dynamicSizingEnabled: Bool
     @Binding var noteOpacity: Double
     @Binding var disappearOnHover: Bool
@@ -674,9 +676,9 @@ struct SettingsView: View {
                     Divider()
                         .padding(.vertical, 4)
 
-                    Toggle("Always on Top", isOn: $alwaysOnTop)
-                        .onChange(of: alwaysOnTop) { newValue in
-                            appDelegate.updateWindowLevel(for: noteId, alwaysOnTop: newValue)
+                    Toggle("Stay on This Desktop", isOn: $stayOnThisScreen)
+                        .onChange(of: stayOnThisScreen) { newValue in
+                            appDelegate.updateStayOnThisScreen(for: noteId, stayOnThisScreen: newValue)
                         }
                 }
                 .padding(.horizontal, 24)

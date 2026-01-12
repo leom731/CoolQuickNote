@@ -10,7 +10,7 @@ struct NoteData: Codable, Identifiable {
     var fontSize: Double
     var fontColorName: String
     var backgroundColorName: String
-    var alwaysOnTop: Bool
+    var stayOnThisScreen: Bool
     var dynamicSizingEnabled: Bool
     var noteOpacity: Double
     var windowFrame: CGRect?
@@ -21,7 +21,7 @@ struct NoteData: Codable, Identifiable {
          fontSize: Double = 24,
          fontColorName: String = "blue",
          backgroundColorName: String = "yellow",
-         alwaysOnTop: Bool = true,
+         stayOnThisScreen: Bool = false,
          dynamicSizingEnabled: Bool = true,
          noteOpacity: Double = 1.0,
          windowFrame: CGRect? = nil) {
@@ -31,10 +31,60 @@ struct NoteData: Codable, Identifiable {
         self.fontSize = fontSize
         self.fontColorName = fontColorName
         self.backgroundColorName = backgroundColorName
-        self.alwaysOnTop = alwaysOnTop
+        self.stayOnThisScreen = stayOnThisScreen
         self.dynamicSizingEnabled = dynamicSizingEnabled
         self.noteOpacity = noteOpacity
         self.windowFrame = windowFrame
+    }
+}
+
+extension NoteData {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case content
+        case selectedFont
+        case fontSize
+        case fontColorName
+        case backgroundColorName
+        case stayOnThisScreen
+        case alwaysOnTop
+        case dynamicSizingEnabled
+        case noteOpacity
+        case windowFrame
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        content = try container.decodeIfPresent(String.self, forKey: .content) ?? ""
+        selectedFont = try container.decodeIfPresent(String.self, forKey: .selectedFont) ?? "regular"
+        fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? 24
+        fontColorName = try container.decodeIfPresent(String.self, forKey: .fontColorName) ?? "blue"
+        backgroundColorName = try container.decodeIfPresent(String.self, forKey: .backgroundColorName) ?? "yellow"
+        if let stayOnThisScreen = try container.decodeIfPresent(Bool.self, forKey: .stayOnThisScreen) {
+            self.stayOnThisScreen = stayOnThisScreen
+        } else if let alwaysOnTop = try container.decodeIfPresent(Bool.self, forKey: .alwaysOnTop) {
+            stayOnThisScreen = !alwaysOnTop
+        } else {
+            stayOnThisScreen = false
+        }
+        dynamicSizingEnabled = try container.decodeIfPresent(Bool.self, forKey: .dynamicSizingEnabled) ?? true
+        noteOpacity = try container.decodeIfPresent(Double.self, forKey: .noteOpacity) ?? 1.0
+        windowFrame = try container.decodeIfPresent(CGRect.self, forKey: .windowFrame)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(content, forKey: .content)
+        try container.encode(selectedFont, forKey: .selectedFont)
+        try container.encode(fontSize, forKey: .fontSize)
+        try container.encode(fontColorName, forKey: .fontColorName)
+        try container.encode(backgroundColorName, forKey: .backgroundColorName)
+        try container.encode(stayOnThisScreen, forKey: .stayOnThisScreen)
+        try container.encode(dynamicSizingEnabled, forKey: .dynamicSizingEnabled)
+        try container.encode(noteOpacity, forKey: .noteOpacity)
+        try container.encodeIfPresent(windowFrame, forKey: .windowFrame)
     }
 }
 
@@ -289,7 +339,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     private func createNotePanel(with noteData: NoteData) {
-        // Create a floating panel
+        // Create the note panel
         let defaultSize = CGSize(width: 300, height: 300)
         let initialSize = CGSize(width: defaultSize.width * 0.75, height: defaultSize.height * 0.75)
         let initialFrame = noteData.windowFrame ?? defaultFrameForFirstLaunch(size: initialSize)
@@ -300,15 +350,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             defer: false
         )
 
-        // Configure panel to appear on all spaces including full screen
+        // Configure panel appearance and space behavior
         panel.title = "CoolQuickNote"
-        panel.isFloatingPanel = noteData.alwaysOnTop
-        panel.level = noteData.alwaysOnTop ? NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.popUpMenuWindow))) : .normal
-        if noteData.alwaysOnTop {
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        } else {
-            panel.collectionBehavior = [.moveToActiveSpace]
-        }
+        let stayOnThisScreen = ensureStayOnThisScreenSetting(for: noteData.id, fallback: noteData.stayOnThisScreen)
+        applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen)
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
@@ -378,20 +423,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
-    func updateWindowLevel(for noteId: UUID, alwaysOnTop: Bool) {
-        guard let panel = notePanels[noteId] else { return }
-        panel.isFloatingPanel = alwaysOnTop
-        panel.level = alwaysOnTop ? NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.popUpMenuWindow))) : .normal
-        if alwaysOnTop {
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        } else {
-            panel.collectionBehavior = [.moveToActiveSpace]
+    private func stayOnThisScreenKey(for noteId: UUID) -> String {
+        "note_\(noteId.uuidString)_stayOnThisScreen"
+    }
+
+    private func alwaysOnTopKey(for noteId: UUID) -> String {
+        "note_\(noteId.uuidString)_alwaysOnTop"
+    }
+
+    func ensureStayOnThisScreenSetting(for noteId: UUID, fallback: Bool = false) -> Bool {
+        let defaults = UserDefaults.standard
+        let newKey = stayOnThisScreenKey(for: noteId)
+        if defaults.object(forKey: newKey) != nil {
+            return defaults.bool(forKey: newKey)
         }
+        let legacyKey = alwaysOnTopKey(for: noteId)
+        if defaults.object(forKey: legacyKey) != nil {
+            let stayOnThisScreen = !defaults.bool(forKey: legacyKey)
+            defaults.set(stayOnThisScreen, forKey: newKey)
+            return stayOnThisScreen
+        }
+        defaults.set(fallback, forKey: newKey)
+        return fallback
+    }
+
+    private func applySpaceBehavior(to panel: NSPanel, stayOnThisScreen: Bool) {
+        panel.isFloatingPanel = false
+        panel.level = .normal
+        if stayOnThisScreen {
+            panel.collectionBehavior = [.moveToActiveSpace]
+        } else {
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        }
+    }
+
+    func updateStayOnThisScreen(for noteId: UUID, stayOnThisScreen: Bool) {
+        guard let panel = notePanels[noteId] else { return }
+        applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen)
         saveNotes()
         refreshNoteVisibilityForActiveSpace()
     }
 
-    func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, alwaysOnTop: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>) {
+    func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, stayOnThisScreen: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>) {
         // If settings panel already exists for this note, close it
         if let existingPanel = settingsPanels[noteId] {
             // Remove child window relationship before closing
@@ -427,7 +500,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             fontSize: fontSize,
             fontColorName: fontColorName,
             backgroundColorName: backgroundColorName,
-            alwaysOnTop: alwaysOnTop,
+            stayOnThisScreen: stayOnThisScreen,
             dynamicSizingEnabled: dynamicSizingEnabled,
             noteOpacity: noteOpacity,
             disappearOnHover: disappearOnHover,
@@ -502,7 +575,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 fontSize: UserDefaults.standard.double(forKey: "note_\(id.uuidString)_fontSize") != 0 ? UserDefaults.standard.double(forKey: "note_\(id.uuidString)_fontSize") : 24,
                 fontColorName: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_fontColor") ?? "blue",
                 backgroundColorName: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_backgroundColor") ?? "yellow",
-                alwaysOnTop: UserDefaults.standard.bool(forKey: "note_\(id.uuidString)_alwaysOnTop"),
+                stayOnThisScreen: ensureStayOnThisScreenSetting(for: id),
                 dynamicSizingEnabled: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_dynamicSizing") as? Bool ?? true,
                 noteOpacity: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_opacity") as? Double ?? 1.0,
                 windowFrame: panel.frame
@@ -528,8 +601,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private func refreshNoteVisibilityForActiveSpace() {
         let activeSpaceIsFullscreen = isActiveSpaceFullscreen()
         for (id, panel) in notePanels {
-            let alwaysOnTop = UserDefaults.standard.bool(forKey: "note_\(id.uuidString)_alwaysOnTop")
-            if !alwaysOnTop && activeSpaceIsFullscreen {
+            let stayOnThisScreen = ensureStayOnThisScreenSetting(for: id)
+            if stayOnThisScreen && activeSpaceIsFullscreen {
                 if panel.isVisible {
                     panel.orderOut(nil)
                 }
