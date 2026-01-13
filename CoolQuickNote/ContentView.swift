@@ -418,35 +418,43 @@ struct ContentView: View {
     }
 
     private func saveToNotesApp() {
-        // Get the title from first line
-        let lines = noteContent.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
-        let noteTitle: String
-        if let firstLine = lines.first {
-            noteTitle = String(String(firstLine).prefix(50))
-        } else {
-            noteTitle = "Quick Note"
-        }
-
-        // Build AppleScript with proper escaping for shell
-        let escapedTitle = escapeForShell(noteTitle)
-        let escapedBody = escapeForShell(noteContent)
+        // Copy the note content to clipboard (this preserves all formatting exactly)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(noteContent, forType: .string)
 
         let script = """
         tell application "Notes"
+            activate
+
+            -- Ensure CoolQuickNote folder exists
             set folderExists to false
             repeat with aFolder in folders
                 if name of aFolder is "CoolQuickNote" then
                     set folderExists to true
-                    set targetFolder to aFolder
                     exit repeat
                 end if
             end repeat
 
             if folderExists is false then
-                set targetFolder to make new folder with properties {name:"CoolQuickNote"}
+                make new folder with properties {name:"CoolQuickNote"}
             end if
+        end tell
 
-            make new note at targetFolder with properties {name:\(escapedTitle), body:\(escapedBody)}
+        delay 0.5
+
+        -- Use System Events to create new note and paste
+        tell application "System Events"
+            tell process "Notes"
+                -- Create new note with Cmd+N
+                keystroke "n" using command down
+                delay 0.5
+                -- Press Enter to move from title to body
+                keystroke return
+                delay 0.3
+                -- Paste clipboard content
+                keystroke "v" using command down
+            end tell
         end tell
         """
 
@@ -496,12 +504,21 @@ struct ContentView: View {
         }
     }
 
-    private func escapeForShell(_ text: String) -> String {
-        // Convert to AppleScript string literal format
+    private func escapeForAppleScript(_ text: String) -> String {
+        // Escape special characters and convert newlines to AppleScript's 'return' constant
         let escaped = text
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        return "\"\(escaped)\""
+            .replacingOccurrences(of: "\\", with: "\\\\")  // Escape backslashes first
+            .replacingOccurrences(of: "\"", with: "\\\"")  // Escape quotes
+
+        // Split by newlines and join with AppleScript's return constant
+        let lines = escaped.components(separatedBy: "\n")
+        if lines.count == 1 {
+            return "\"\(escaped)\""
+        }
+
+        // Build AppleScript concatenation: "line1" & return & "line2" & return & "line3"
+        let quotedLines = lines.map { "\"\($0)\"" }
+        return quotedLines.joined(separator: " & return & ")
     }
 
     private func discardNote() {
