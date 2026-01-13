@@ -22,7 +22,7 @@ struct NoteData: Codable, Identifiable {
          fontColorName: String = "blue",
          backgroundColorName: String = "yellow",
          stayOnThisScreen: Bool = false,
-         dynamicSizingEnabled: Bool = true,
+         dynamicSizingEnabled: Bool = false,
          noteOpacity: Double = 1.0,
          windowFrame: CGRect? = nil) {
         self.id = id
@@ -68,7 +68,7 @@ extension NoteData {
         } else {
             stayOnThisScreen = false
         }
-        dynamicSizingEnabled = try container.decodeIfPresent(Bool.self, forKey: .dynamicSizingEnabled) ?? true
+        dynamicSizingEnabled = try container.decodeIfPresent(Bool.self, forKey: .dynamicSizingEnabled) ?? false
         noteOpacity = try container.decodeIfPresent(Double.self, forKey: .noteOpacity) ?? 1.0
         windowFrame = try container.decodeIfPresent(CGRect.self, forKey: .windowFrame)
     }
@@ -576,7 +576,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 fontColorName: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_fontColor") ?? "blue",
                 backgroundColorName: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_backgroundColor") ?? "yellow",
                 stayOnThisScreen: ensureStayOnThisScreenSetting(for: id),
-                dynamicSizingEnabled: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_dynamicSizing") as? Bool ?? true,
+                dynamicSizingEnabled: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_dynamicSizing") as? Bool ?? false,
                 noteOpacity: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_opacity") as? Double ?? 1.0,
                 windowFrame: panel.frame
             )

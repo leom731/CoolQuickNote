@@ -38,7 +38,7 @@ struct ContentView: View {
         let stayOnThisScreenKey = "note_\(noteId.uuidString)_stayOnThisScreen"
         let stayOnThisScreenDefault = appDelegate.ensureStayOnThisScreenSetting(for: noteId)
         _stayOnThisScreen = AppStorage(wrappedValue: stayOnThisScreenDefault, stayOnThisScreenKey)
-        _dynamicSizingEnabled = AppStorage(wrappedValue: true, "note_\(noteId.uuidString)_dynamicSizing")
+        _dynamicSizingEnabled = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_dynamicSizing")
         _noteOpacity = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_opacity")
         _disappearOnHover = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_disappearOnHover")
     }
@@ -498,10 +498,9 @@ struct ContentView: View {
     }
 
     private func updateDynamicSizing(for size: CGSize) {
-        guard dynamicSizingEnabled else { return }
-
         windowSize = size
         shouldUseScrollMode = shouldEnterScrollMode(windowSize: size)
+        guard dynamicSizingEnabled else { return }
 
         if !shouldUseScrollMode {
             effectiveFontSize = calculateOptimalFontSize(for: noteContent, in: size)
