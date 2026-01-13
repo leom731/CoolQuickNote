@@ -268,9 +268,9 @@ struct ContentView: View {
                 backgroundColorName = "yellow"
             } label: {
                 if backgroundColorName == "yellow" {
-                    Label("Yellow", systemImage: "checkmark")
+                    Label("🟡 Yellow", systemImage: "checkmark")
                 } else {
-                    Text("Yellow")
+                    Text("🟡 Yellow")
                 }
             }
 
@@ -278,9 +278,9 @@ struct ContentView: View {
                 backgroundColorName = "pink"
             } label: {
                 if backgroundColorName == "pink" {
-                    Label("Pink", systemImage: "checkmark")
+                    Label("🩷 Pink", systemImage: "checkmark")
                 } else {
-                    Text("Pink")
+                    Text("🩷 Pink")
                 }
             }
 
@@ -288,9 +288,9 @@ struct ContentView: View {
                 backgroundColorName = "blue"
             } label: {
                 if backgroundColorName == "blue" {
-                    Label("Blue", systemImage: "checkmark")
+                    Label("🔵 Blue", systemImage: "checkmark")
                 } else {
-                    Text("Blue")
+                    Text("🔵 Blue")
                 }
             }
 
@@ -298,9 +298,9 @@ struct ContentView: View {
                 backgroundColorName = "green"
             } label: {
                 if backgroundColorName == "green" {
-                    Label("Green", systemImage: "checkmark")
+                    Label("🟢 Green", systemImage: "checkmark")
                 } else {
-                    Text("Green")
+                    Text("🟢 Green")
                 }
             }
 
@@ -308,9 +308,9 @@ struct ContentView: View {
                 backgroundColorName = "purple"
             } label: {
                 if backgroundColorName == "purple" {
-                    Label("Purple", systemImage: "checkmark")
+                    Label("🟣 Purple", systemImage: "checkmark")
                 } else {
-                    Text("Purple")
+                    Text("🟣 Purple")
                 }
             }
 
@@ -318,9 +318,9 @@ struct ContentView: View {
                 backgroundColorName = "orange"
             } label: {
                 if backgroundColorName == "orange" {
-                    Label("Orange", systemImage: "checkmark")
+                    Label("🟠 Orange", systemImage: "checkmark")
                 } else {
-                    Text("Orange")
+                    Text("🟠 Orange")
                 }
             }
         } label: {
