@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var pastedImage: NSImage?
     @State private var isHovering: Bool = false
     @State private var isCommandKeyPressed: Bool = false
+    @State private var showCloseConfirmation: Bool = false
     private let persistenceQueue = DispatchQueue(label: "com.coolquicknote.image.persistence", qos: .userInitiated)
 
     init(noteId: UUID, appDelegate: AppDelegate) {
@@ -203,6 +204,13 @@ struct ContentView: View {
             guard let targetId = notification.userInfo?["noteId"] as? UUID else { return }
             guard targetId == noteId else { return }
             pasteImageFromClipboard()
+        }
+        .alert("Save Note", isPresented: $showCloseConfirmation) {
+            Button("Save to Notes", action: saveToNotesApp)
+            Button("Discard", role: .destructive, action: discardNote)
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Would you like to save this note to the Notes app?")
         }
     }
 
@@ -406,6 +414,97 @@ struct ContentView: View {
     }
 
     private func closeNote() {
+        showCloseConfirmation = true
+    }
+
+    private func saveToNotesApp() {
+        // Get the title from first line
+        let lines = noteContent.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
+        let noteTitle: String
+        if let firstLine = lines.first {
+            noteTitle = String(String(firstLine).prefix(50))
+        } else {
+            noteTitle = "Quick Note"
+        }
+
+        // Build AppleScript with proper escaping for shell
+        let escapedTitle = escapeForShell(noteTitle)
+        let escapedBody = escapeForShell(noteContent)
+
+        let script = """
+        tell application "Notes"
+            set folderExists to false
+            repeat with aFolder in folders
+                if name of aFolder is "CoolQuickNote" then
+                    set folderExists to true
+                    set targetFolder to aFolder
+                    exit repeat
+                end if
+            end repeat
+
+            if folderExists is false then
+                set targetFolder to make new folder with properties {name:"CoolQuickNote"}
+            end if
+
+            make new note at targetFolder with properties {name:\(escapedTitle), body:\(escapedBody)}
+        end tell
+        """
+
+        // Use osascript command which handles permissions better
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+
+        let pipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus != 0 {
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+
+                // Show error to user
+                DispatchQueue.main.async {
+                    let alert = NSAlert()
+                    alert.messageText = "Failed to Save to Notes"
+                    alert.informativeText = errorMessage
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+                return
+            }
+
+            // Close the note after saving successfully
+            DispatchQueue.main.async {
+                self.appDelegate.closeNote(id: self.noteId)
+            }
+        } catch {
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Failed to Save to Notes"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
+    }
+
+    private func escapeForShell(_ text: String) -> String {
+        // Convert to AppleScript string literal format
+        let escaped = text
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+
+    private func discardNote() {
         appDelegate.closeNote(id: noteId)
     }
 
