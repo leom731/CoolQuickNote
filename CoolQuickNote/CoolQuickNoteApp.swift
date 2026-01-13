@@ -683,8 +683,8 @@ private final class ActivatingPanel: NSPanel {
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            // Dispatch window activation asynchronously to avoid priority inversion
-            Task(priority: .userInitiated) { @MainActor [weak self] in
+            // Defer activation to the next run loop to avoid QoS inversion warnings inside AppKit.
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.makeKeyAndOrderFront(nil)  // Keep the clicked panel key in the current space without hopping spaces
                 if !self.isKeyWindow {
