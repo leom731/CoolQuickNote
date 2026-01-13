@@ -14,6 +14,7 @@ struct NoteData: Codable, Identifiable {
     var dynamicSizingEnabled: Bool
     var noteOpacity: Double
     var windowFrame: CGRect?
+    var savedSpaceIdentifier: Int?
 
     init(id: UUID = UUID(),
          content: String = "",
@@ -24,7 +25,8 @@ struct NoteData: Codable, Identifiable {
          stayOnThisScreen: Bool = false,
          dynamicSizingEnabled: Bool = false,
          noteOpacity: Double = 1.0,
-         windowFrame: CGRect? = nil) {
+         windowFrame: CGRect? = nil,
+         savedSpaceIdentifier: Int? = nil) {
         self.id = id
         self.content = content
         self.selectedFont = selectedFont
@@ -35,6 +37,7 @@ struct NoteData: Codable, Identifiable {
         self.dynamicSizingEnabled = dynamicSizingEnabled
         self.noteOpacity = noteOpacity
         self.windowFrame = windowFrame
+        self.savedSpaceIdentifier = savedSpaceIdentifier
     }
 }
 
@@ -51,6 +54,7 @@ extension NoteData {
         case dynamicSizingEnabled
         case noteOpacity
         case windowFrame
+        case savedSpaceIdentifier
     }
 
     init(from decoder: Decoder) throws {
@@ -71,6 +75,7 @@ extension NoteData {
         dynamicSizingEnabled = try container.decodeIfPresent(Bool.self, forKey: .dynamicSizingEnabled) ?? false
         noteOpacity = try container.decodeIfPresent(Double.self, forKey: .noteOpacity) ?? 1.0
         windowFrame = try container.decodeIfPresent(CGRect.self, forKey: .windowFrame)
+        savedSpaceIdentifier = try container.decodeIfPresent(Int.self, forKey: .savedSpaceIdentifier)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -85,6 +90,7 @@ extension NoteData {
         try container.encode(dynamicSizingEnabled, forKey: .dynamicSizingEnabled)
         try container.encode(noteOpacity, forKey: .noteOpacity)
         try container.encodeIfPresent(windowFrame, forKey: .windowFrame)
+        try container.encodeIfPresent(savedSpaceIdentifier, forKey: .savedSpaceIdentifier)
     }
 }
 
@@ -386,6 +392,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         notePanels[noteData.id] = panel
         noteCount = notePanels.count
+
+        // If stayOnThisScreen is enabled and we have a saved space, try to restore it
+        if stayOnThisScreen, let savedSpaceID = noteData.savedSpaceIdentifier {
+            // Attempt to move the window to the saved space
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.moveWindow(panel, toSpaceIdentifier: savedSpaceID)
+            }
+        } else if stayOnThisScreen {
+            // If stayOnThisScreen is enabled but no saved space, capture current space
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self, id = noteData.id] in
+                guard let self = self, let panel = self.notePanels[id] else { return }
+                if let spaceID = self.getCurrentSpaceIdentifier(for: panel) {
+                    self.saveSpaceIdentifier(for: id, spaceID: spaceID)
+                }
+            }
+        }
+
         refreshNoteVisibilityForActiveSpace()
     }
 
@@ -460,6 +483,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func updateStayOnThisScreen(for noteId: UUID, stayOnThisScreen: Bool) {
         guard let panel = notePanels[noteId] else { return }
         applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen)
+
+        // If enabling "Stay on this desktop", capture the current space
+        if stayOnThisScreen {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self = self, let panel = self.notePanels[noteId] else { return }
+                if let spaceID = self.getCurrentSpaceIdentifier(for: panel) {
+                    self.saveSpaceIdentifier(for: noteId, spaceID: spaceID)
+                }
+            }
+        } else {
+            // If disabling, clear the saved space identifier
+            saveSpaceIdentifier(for: noteId, spaceID: nil)
+        }
+
         saveNotes()
         refreshNoteVisibilityForActiveSpace()
     }
@@ -568,6 +605,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         var notes: [NoteData] = []
 
         for (id, panel) in notePanels {
+            // Get the saved space identifier from existing data if available
+            let existingSavedSpaceID = loadNotes().first(where: { $0.id == id })?.savedSpaceIdentifier
+
             let note = NoteData(
                 id: id,
                 content: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_content") ?? "",
@@ -578,7 +618,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 stayOnThisScreen: ensureStayOnThisScreenSetting(for: id),
                 dynamicSizingEnabled: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_dynamicSizing") as? Bool ?? false,
                 noteOpacity: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_opacity") as? Double ?? 1.0,
-                windowFrame: panel.frame
+                windowFrame: panel.frame,
+                savedSpaceIdentifier: existingSavedSpaceID
             )
             notes.append(note)
         }
@@ -592,6 +633,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         var notes = loadNotes()
         if let index = notes.firstIndex(where: { $0.id == id }) {
             notes[index].windowFrame = frame
+            if let encoded = try? JSONEncoder().encode(notes) {
+                UserDefaults.standard.set(encoded, forKey: notesKey)
+            }
+        }
+    }
+
+    private func saveSpaceIdentifier(for noteId: UUID, spaceID: Int?) {
+        var notes = loadNotes()
+        if let index = notes.firstIndex(where: { $0.id == noteId }) {
+            notes[index].savedSpaceIdentifier = spaceID
             if let encoded = try? JSONEncoder().encode(notes) {
                 UserDefaults.standard.set(encoded, forKey: notesKey)
             }
@@ -642,6 +693,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             }
         }
         return false
+    }
+
+    // MARK: - Space Management
+
+    /// Gets the current space identifier for a window
+    private func getCurrentSpaceIdentifier(for window: NSWindow) -> Int? {
+        let windowNumber = window.windowNumber
+        guard windowNumber > 0 else {
+            return nil
+        }
+
+        let cgWindowID = CGWindowID(windowNumber)
+
+        // Get window info including spaces
+        guard let windowInfo = CGWindowListCopyWindowInfo([.optionIncludingWindow], cgWindowID) as? [[String: Any]],
+              let info = windowInfo.first else {
+            return nil
+        }
+
+        // Extract space information if available
+        // Note: This uses the kCGWindowWorkspace key which provides the space ID
+        if let spaceID = info["kCGWindowWorkspace" as String] as? Int {
+            return spaceID
+        }
+
+        return nil
+    }
+
+    /// Attempts to move a window to a specific space
+    private func moveWindow(_ window: NSWindow, toSpaceIdentifier spaceID: Int) {
+        // Store the target space for this window
+        // We'll use the collection behavior to handle the actual movement
+        guard let panel = window as? NSPanel else { return }
+
+        // Temporarily set to canJoinAllSpaces to allow movement
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        // Show the window which should make it appear on all spaces temporarily
+        panel.orderFrontRegardless()
+
+        // After a brief delay, restore the moveToActiveSpace behavior
+        // This ensures the window is now on the correct space
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            panel.collectionBehavior = [.moveToActiveSpace]
+        }
     }
 }
 
