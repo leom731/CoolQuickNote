@@ -171,6 +171,8 @@ struct ContentView: View {
                 Label("Insert Date & Time", systemImage: "calendar.badge.clock")
             }
             Divider()
+            backgroundColorMenu
+            Divider()
             settingsCommands
             Divider()
             noteOptionsMenu
@@ -256,6 +258,73 @@ struct ContentView: View {
 
         Button(action: createNewNote) {
             Label("New Note", systemImage: "plus.circle")
+        }
+    }
+
+    @ViewBuilder
+    private var backgroundColorMenu: some View {
+        Menu {
+            Button {
+                backgroundColorName = "yellow"
+            } label: {
+                if backgroundColorName == "yellow" {
+                    Label("Yellow", systemImage: "checkmark")
+                } else {
+                    Text("Yellow")
+                }
+            }
+
+            Button {
+                backgroundColorName = "pink"
+            } label: {
+                if backgroundColorName == "pink" {
+                    Label("Pink", systemImage: "checkmark")
+                } else {
+                    Text("Pink")
+                }
+            }
+
+            Button {
+                backgroundColorName = "blue"
+            } label: {
+                if backgroundColorName == "blue" {
+                    Label("Blue", systemImage: "checkmark")
+                } else {
+                    Text("Blue")
+                }
+            }
+
+            Button {
+                backgroundColorName = "green"
+            } label: {
+                if backgroundColorName == "green" {
+                    Label("Green", systemImage: "checkmark")
+                } else {
+                    Text("Green")
+                }
+            }
+
+            Button {
+                backgroundColorName = "purple"
+            } label: {
+                if backgroundColorName == "purple" {
+                    Label("Purple", systemImage: "checkmark")
+                } else {
+                    Text("Purple")
+                }
+            }
+
+            Button {
+                backgroundColorName = "orange"
+            } label: {
+                if backgroundColorName == "orange" {
+                    Label("Orange", systemImage: "checkmark")
+                } else {
+                    Text("Orange")
+                }
+            }
+        } label: {
+            Label("Background Color", systemImage: "paintpalette")
         }
     }
 
