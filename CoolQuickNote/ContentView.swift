@@ -55,6 +55,35 @@ struct ContentView: View {
         return "\(dateString)\n\(timeString)\n"
     }
 
+    private func insertCurrentDateTime() {
+        let dateTime = formatCurrentDateTime()
+        if let textView = resolveTextView() {
+            textView.insertText(dateTime, replacementRange: textView.selectedRange())
+        } else {
+            noteContent.append(dateTime)
+        }
+    }
+
+    private func resolveTextView() -> NSTextView? {
+        if let textView = resolveWindow()?.firstResponder as? NSTextView {
+            return textView
+        }
+        guard let contentView = resolveWindow()?.contentView else { return nil }
+        return findTextView(in: contentView)
+    }
+
+    private func findTextView(in view: NSView) -> NSTextView? {
+        if let textView = view as? NSTextView {
+            return textView
+        }
+        for subview in view.subviews {
+            if let textView = findTextView(in: subview) {
+                return textView
+            }
+        }
+        return nil
+    }
+
     private var imageStorageKey: String {
         "note_\(noteId.uuidString)_imageData"
     }
@@ -137,6 +166,9 @@ struct ContentView: View {
         .contextMenu {
             Button(action: pasteImageFromClipboard) {
                 Label("Paste Image", systemImage: "doc.on.clipboard")
+            }
+            Button(action: insertCurrentDateTime) {
+                Label("Insert Date & Time", systemImage: "calendar.badge.clock")
             }
             Divider()
             settingsCommands
