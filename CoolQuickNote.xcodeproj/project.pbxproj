@@ -13,6 +13,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		506B5E332F184D81000B7740 /* CoolQuickNote.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; name = CoolQuickNote.storekit; path = CoolQuickNote/CoolQuickNote.storekit; sourceTree = "<group>"; };
 		A2000001000000000000001 /* CoolQuickNoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoolQuickNoteApp.swift; sourceTree = "<group>"; };
 		A2000002000000000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A2000003000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -34,6 +35,7 @@
 		A5000001000000000000001 = {
 			isa = PBXGroup;
 			children = (
+				506B5E332F184D81000B7740 /* CoolQuickNote.storekit */,
 				A5000002000000000000001 /* CoolQuickNote */,
 				A5000003000000000000001 /* Products */,
 			);

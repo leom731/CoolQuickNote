@@ -179,6 +179,10 @@ struct ContentView: View {
             noteOptionsMenu
             Divider()
             windowActionsMenu
+            Divider()
+            Button(action: { appDelegate.presentTipJar(from: resolveWindow()) }) {
+                Label("Leave a Tip", systemImage: "cup.and.saucer.fill")
+            }
         }
         .background(WindowAccessor(window: $currentWindow))
         .onAppear {
@@ -863,6 +867,7 @@ struct SettingsView: View {
     let noteId: UUID
     let appDelegate: AppDelegate
 
+
     let colorOptions: [(name: String, color: Color, display: String)] = [
         ("yellow", Color(red: 1.0, green: 0.98, blue: 0.7), "Yellow"),
         ("pink", Color(red: 1.0, green: 0.85, blue: 0.9), "Pink"),
@@ -1029,6 +1034,34 @@ struct SettingsView: View {
                         .onChange(of: stayOnThisScreen) { newValue in
                             appDelegate.updateStayOnThisScreen(for: noteId, stayOnThisScreen: newValue)
                         }
+
+                    Divider()
+                        .padding(.vertical, 4)
+
+                    VStack(spacing: 8) {
+                        Text("Enjoying CoolQuickNote?")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+
+                        Button(action: {
+                            appDelegate.presentTipJar(from: appDelegate.settingsPanels[noteId])
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "cup.and.saucer.fill")
+                                Text("Leave a Tip")
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.secondary)
+                        .frame(maxWidth: .infinity)
+
+                        Text("Tipping is greatly appreciated but not necessary")
+                            .font(.caption)
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 8)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
@@ -1241,4 +1274,397 @@ final class HoverControlView: NSView {
 
 #Preview {
     ContentView(noteId: UUID(), appDelegate: AppDelegate())
+}
+
+// MARK: - StoreKit Manager
+
+@MainActor
+class StoreKitManager: ObservableObject {
+    // Published properties for UI updates
+    @Published var products: [Product] = []
+    @Published var purchaseState: PurchaseState = .idle
+    @Published var errorMessage: String?
+
+    // Product identifiers
+    private let productIdentifiers: Set<String> = [
+        "com.coolquicknote.tip.small",
+        "com.coolquicknote.tip.medium",
+        "com.coolquicknote.tip.large"
+    ]
+
+    // Transaction listener
+    private var updateListenerTask: Task<Void, Error>?
+
+    // Purchase states
+    enum PurchaseState: Equatable {
+        case idle
+        case loading
+        case purchasing
+        case purchased
+        case failed(Error)
+        case cancelled
+
+        static func == (lhs: PurchaseState, rhs: PurchaseState) -> Bool {
+            switch (lhs, rhs) {
+            case (.idle, .idle),
+                 (.loading, .loading),
+                 (.purchasing, .purchasing),
+                 (.purchased, .purchased),
+                 (.cancelled, .cancelled):
+                return true
+            case (.failed, .failed):
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    init() {
+        // Start listening for transaction updates
+        updateListenerTask = listenForTransactions()
+
+        // Load products on initialization
+        Task {
+            await loadProducts()
+        }
+    }
+
+    deinit {
+        updateListenerTask?.cancel()
+    }
+
+    // MARK: - Load Products
+
+    /// Loads available products from the App Store
+    func loadProducts() async {
+        purchaseState = .loading
+
+        do {
+            // Request products from App Store
+            let storeProducts = try await Product.products(for: productIdentifiers)
+
+            // Sort products by price (lowest to highest)
+            self.products = storeProducts.sorted { $0.price < $1.price }
+
+            purchaseState = .idle
+            print("✅ Loaded \(products.count) products")
+        } catch {
+            purchaseState = .failed(error)
+            errorMessage = "Failed to load products: \(error.localizedDescription)"
+            print("❌ Failed to load products: \(error)")
+        }
+    }
+
+    // MARK: - Purchase Product
+
+    /// Purchases a product
+    func purchase(_ product: Product) async {
+        purchaseState = .purchasing
+
+        do {
+            // Attempt purchase
+            let result = try await product.purchase()
+
+            // Handle purchase result
+            switch result {
+            case .success(let verification):
+                // Verify the transaction
+                let transaction = try checkVerified(verification)
+
+                // Deliver content to the user
+                await deliverPurchase(transaction: transaction)
+
+                // Mark transaction as finished
+                await transaction.finish()
+
+                purchaseState = .purchased
+                print("✅ Purchase successful: \(product.displayName)")
+
+            case .userCancelled:
+                purchaseState = .cancelled
+                print("ℹ️ User cancelled purchase")
+
+            case .pending:
+                purchaseState = .idle
+                errorMessage = "Purchase is pending approval"
+                print("⏳ Purchase pending approval")
+
+            @unknown default:
+                purchaseState = .idle
+                print("⚠️ Unknown purchase result")
+            }
+
+        } catch {
+            purchaseState = .failed(error)
+            errorMessage = "Purchase failed: \(error.localizedDescription)"
+            print("❌ Purchase failed: \(error)")
+        }
+    }
+
+    // MARK: - Transaction Verification
+
+    /// Verifies a transaction to ensure it's legitimate
+    nonisolated private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
+        switch result {
+        case .unverified(_, let error):
+            // Transaction failed verification
+            throw error
+        case .verified(let safe):
+            // Transaction is verified
+            return safe
+        }
+    }
+
+    // MARK: - Deliver Purchase
+
+    /// Delivers the purchased content to the user
+    private func deliverPurchase(transaction: StoreKit.Transaction) async {
+        // For consumable products (tips), we just need to acknowledge the purchase
+        // No need to persist anything since it's a one-time tip
+        print("✅ Delivered purchase: \(transaction.productID)")
+    }
+
+    // MARK: - Transaction Listener
+
+    /// Listens for transaction updates from the App Store
+    private func listenForTransactions() -> Task<Void, Error> {
+        return Task.detached {
+            // Iterate through transaction updates
+            for await result in StoreKit.Transaction.updates {
+                do {
+                    let transaction = try self.checkVerified(result)
+
+                    // Deliver the purchase
+                    await self.deliverPurchase(transaction: transaction)
+
+                    // Finish the transaction
+                    await transaction.finish()
+                } catch {
+                    print("❌ Transaction verification failed: \(error)")
+                }
+            }
+        }
+    }
+
+    // MARK: - Helper Methods
+
+    /// Resets the purchase state
+    func resetPurchaseState() {
+        purchaseState = .idle
+        errorMessage = nil
+    }
+
+    /// Gets a product by its identifier
+    func product(for identifier: String) -> Product? {
+        products.first { $0.id == identifier }
+    }
+
+    /// Checks if products are loaded
+    var hasLoadedProducts: Bool {
+        !products.isEmpty
+    }
+}
+
+// MARK: - Tip Jar View
+
+import StoreKit
+
+struct TipJarView: View {
+    @Binding var isPresented: Bool
+    @StateObject private var storeKit = StoreKitManager()
+    @State private var selectedProduct: Product?
+    @State private var showThankYou = false
+
+    var body: some View {
+        VStack(spacing: 24) {
+            // Header
+            VStack(spacing: 12) {
+                Image(systemName: "heart.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.pink.opacity(0.7))
+
+                Text("Support Development")
+                    .font(.title2.bold())
+
+                Text("Your tips help keep this app free, ad-free, and constantly improving")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 20)
+
+            Divider()
+                .padding(.horizontal)
+
+            // Loading or Product Options
+            if storeKit.hasLoadedProducts {
+                VStack(spacing: 12) {
+                    Text("Choose an amount")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 10) {
+                        ForEach(storeKit.products, id: \.id) { product in
+                            ProductTipButton(
+                                product: product,
+                                isSelected: selectedProduct?.id == product.id,
+                                isDisabled: storeKit.purchaseState == .purchasing
+                            ) {
+                                selectedProduct = product
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            } else {
+                ProgressView("Loading options...")
+                    .padding()
+            }
+
+            // Error Message
+            if let errorMessage = storeKit.errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+
+            // Purchase Button
+            if let product = selectedProduct {
+                Button(action: {
+                    Task {
+                        await purchaseProduct(product)
+                    }
+                }) {
+                    HStack {
+                        if storeKit.purchaseState == .purchasing {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .frame(width: 20, height: 20)
+                        } else {
+                            Image(systemName: "heart.fill")
+                        }
+                        Text(storeKit.purchaseState == .purchasing ? "Processing..." : "Tip \(product.displayPrice)")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(storeKit.purchaseState == .purchasing ? Color.gray : Color.blue)
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+                .disabled(storeKit.purchaseState == .purchasing)
+                .padding(.horizontal)
+                .transition(.scale.combined(with: .opacity))
+            }
+
+            Spacer()
+
+            // Footer note
+            VStack(spacing: 8) {
+                Text("100% optional – no pressure at all")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Text("The app will always remain free\nwith all features")
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.bottom, 20)
+
+            // Close button
+            Button("Not Now") {
+                isPresented = false
+            }
+            .buttonStyle(.bordered)
+            .padding(.bottom, 16)
+        }
+        .frame(maxWidth: 400, maxHeight: 500)
+        .padding(.horizontal, 16)
+        .animation(.spring(response: 0.3), value: selectedProduct)
+        .alert("Thank You! 💙", isPresented: $showThankYou) {
+            Button("You're Welcome!") {
+                isPresented = false
+            }
+        } message: {
+            Text("Your support means everything! Thanks for helping keep this app free and awesome.")
+        }
+        .onChange(of: storeKit.purchaseState) { newState in
+            if case .purchased = newState {
+                showThankYou = true
+                storeKit.resetPurchaseState()
+            }
+        }
+        .onAppear {
+            print("📱 TipJarView appeared")
+            print("📱 Products loaded: \(storeKit.hasLoadedProducts)")
+            print("📱 Product count: \(storeKit.products.count)")
+            print("📱 Purchase state: \(storeKit.purchaseState)")
+            if let error = storeKit.errorMessage {
+                print("📱 Error: \(error)")
+            }
+        }
+    }
+
+    private func purchaseProduct(_ product: Product) async {
+        await storeKit.purchase(product)
+    }
+}
+
+// MARK: - Product Tip Button Component
+struct ProductTipButton: View {
+    let product: Product
+    let isSelected: Bool
+    let isDisabled: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(spacing: 6) {
+                Text(product.displayPrice)
+                    .font(.title3.bold())
+                    .foregroundColor(isSelected ? .white : .primary)
+                    .minimumScaleFactor(0.8)
+                    .lineLimit(1)
+
+                Text(descriptionForProduct(product))
+                    .font(.caption2)
+                    .foregroundColor(isSelected ? .white.opacity(0.9) : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 70)
+            .padding(.horizontal, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? Color.blue : Color.secondary.opacity(0.1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
+            )
+            .opacity(isDisabled ? 0.6 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+    }
+
+    private func descriptionForProduct(_ product: Product) -> String {
+        // Map product IDs to friendly descriptions
+        if product.id.contains("small") {
+            return "Coffee"
+        } else if product.id.contains("medium") {
+            return "Generous"
+        } else if product.id.contains("large") {
+            return "Amazing!"
+        } else {
+            return "Tip"
+        }
+    }
 }

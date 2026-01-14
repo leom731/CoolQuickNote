@@ -137,6 +137,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     var notePanels: [UUID: NSPanel] = [:]
     var settingsPanels: [UUID: NSPanel] = [:]
     fileprivate var settingsPanelDelegates: [UUID: SettingsPanelDelegate] = [:]
+    private var tipJarPanel: NSPanel?
+    private var tipJarPanelDelegate: TipJarPanelDelegate?
     private let notesKey = "savedNotes"
     private var statusItem: NSStatusItem?
     private var spaceObserver: NSObjectProtocol?
@@ -572,6 +574,76 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         settingsPanels[noteId] = settingsPanel
     }
 
+    func presentTipJar(from window: NSWindow? = nil) {
+        if let panel = tipJarPanel {
+            centerTipJar(panel, relativeTo: window)
+            panel.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let panel = ActivatingPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 560),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+
+        panel.title = "Support Development"
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        panel.hasShadow = true
+
+        let isPresented = Binding<Bool>(
+            get: { true },
+            set: { [weak self] newValue in
+                if !newValue {
+                    self?.closeTipJar()
+                }
+            }
+        )
+
+        let hostingView = NSHostingView(rootView: TipJarView(isPresented: isPresented))
+        panel.contentView = hostingView
+
+        let delegate = TipJarPanelDelegate(appDelegate: self)
+        panel.delegate = delegate
+        tipJarPanelDelegate = delegate
+
+        tipJarPanel = panel
+        centerTipJar(panel, relativeTo: window)
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    fileprivate func handleTipJarClosed() {
+        tipJarPanel = nil
+        tipJarPanelDelegate = nil
+    }
+
+    private func closeTipJar() {
+        tipJarPanel?.close()
+    }
+
+    private func centerTipJar(_ panel: NSPanel, relativeTo window: NSWindow?) {
+        let screen = window?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        guard let screen else {
+            panel.center()
+            return
+        }
+
+        let visibleFrame = screen.visibleFrame
+        var frame = panel.frame
+        frame.origin.x = visibleFrame.midX - (frame.size.width / 2)
+        frame.origin.y = visibleFrame.midY - (frame.size.height / 2)
+        let clampedX = min(max(frame.origin.x, visibleFrame.minX), visibleFrame.maxX - frame.size.width)
+        let clampedY = min(max(frame.origin.y, visibleFrame.minY), visibleFrame.maxY - frame.size.height)
+        panel.setFrameOrigin(NSPoint(x: clampedX, y: clampedY))
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
@@ -760,6 +832,18 @@ fileprivate class SettingsPanelDelegate: NSObject, NSWindowDelegate {
 
         appDelegate?.settingsPanels.removeValue(forKey: noteId)
         appDelegate?.settingsPanelDelegates.removeValue(forKey: noteId)
+    }
+}
+
+fileprivate class TipJarPanelDelegate: NSObject, NSWindowDelegate {
+    weak var appDelegate: AppDelegate?
+
+    init(appDelegate: AppDelegate) {
+        self.appDelegate = appDelegate
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        appDelegate?.handleTipJarClosed()
     }
 }
 
