@@ -251,9 +251,10 @@ struct ContentView: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.system(size: 12))
-                    .foregroundColor(.gray.opacity(0.6))
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .tint(.gray.opacity(0.6))
             .fixedSize()
             .help("Window actions")
         }
