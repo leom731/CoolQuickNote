@@ -852,6 +852,15 @@ final class TabInsertionTextView: NSTextView {
             super.insertTab(sender)
         }
     }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Handle Command+A for Select All
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "a" {
+            selectAll(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 struct SettingsView: View {
