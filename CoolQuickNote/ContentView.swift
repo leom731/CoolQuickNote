@@ -172,6 +172,7 @@ struct ContentView: View {
             }
             Divider()
             backgroundColorMenu
+            opacityMenu
             Divider()
             settingsCommands
             Divider()
@@ -363,6 +364,63 @@ struct ContentView: View {
             } else {
                 Text("Hide on Hover")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var opacityMenu: some View {
+        Menu {
+            Button {
+                noteOpacity = 1.0
+            } label: {
+                if noteOpacity == 1.0 {
+                    Label("100%", systemImage: "checkmark")
+                } else {
+                    Text("100%")
+                }
+            }
+
+            Button {
+                noteOpacity = 0.8
+            } label: {
+                if noteOpacity == 0.8 {
+                    Label("80%", systemImage: "checkmark")
+                } else {
+                    Text("80%")
+                }
+            }
+
+            Button {
+                noteOpacity = 0.6
+            } label: {
+                if noteOpacity == 0.6 {
+                    Label("60%", systemImage: "checkmark")
+                } else {
+                    Text("60%")
+                }
+            }
+
+            Button {
+                noteOpacity = 0.4
+            } label: {
+                if noteOpacity == 0.4 {
+                    Label("40%", systemImage: "checkmark")
+                } else {
+                    Text("40%")
+                }
+            }
+
+            Button {
+                noteOpacity = 0.2
+            } label: {
+                if noteOpacity == 0.2 {
+                    Label("20%", systemImage: "checkmark")
+                } else {
+                    Text("20%")
+                }
+            }
+        } label: {
+            Label("Opacity (\(Int(noteOpacity * 100))%)", systemImage: "circle.lefthalf.filled")
         }
     }
 
