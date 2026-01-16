@@ -473,10 +473,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     private func applySpaceBehavior(to panel: NSPanel, stayOnThisScreen: Bool) {
-        panel.isFloatingPanel = false
-        panel.level = .normal
+        // Always keep note windows floating on top
+        panel.isFloatingPanel = true
+        panel.level = .floating
         if stayOnThisScreen {
-            panel.collectionBehavior = [.moveToActiveSpace]
+            panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         } else {
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         }
