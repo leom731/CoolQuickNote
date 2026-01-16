@@ -1240,6 +1240,10 @@ final class HoverControlView: NSView {
     private var flagsMonitor: Any?
     private var localMouseMonitor: Any?
     private var globalMouseMonitor: Any?
+    private var menuBeginObserver: Any?
+    private var menuEndObserver: Any?
+    private var menuTrackingDepth: Int = 0
+    private var isMenuTracking: Bool = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1305,6 +1309,26 @@ final class HoverControlView: NSView {
                 self?.handleMouseEvent(event)
             }
         }
+
+        if menuBeginObserver == nil {
+            menuBeginObserver = NotificationCenter.default.addObserver(
+                forName: NSMenu.didBeginTrackingNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.updateMenuTracking(started: true)
+            }
+        }
+
+        if menuEndObserver == nil {
+            menuEndObserver = NotificationCenter.default.addObserver(
+                forName: NSMenu.didEndTrackingNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.updateMenuTracking(started: false)
+            }
+        }
     }
 
     private func removeMonitors() {
@@ -1320,6 +1344,29 @@ final class HoverControlView: NSView {
             NSEvent.removeMonitor(monitor)
             globalMouseMonitor = nil
         }
+        if let observer = menuBeginObserver {
+            NotificationCenter.default.removeObserver(observer)
+            menuBeginObserver = nil
+        }
+        if let observer = menuEndObserver {
+            NotificationCenter.default.removeObserver(observer)
+            menuEndObserver = nil
+        }
+        menuTrackingDepth = 0
+        isMenuTracking = false
+    }
+
+    private func updateMenuTracking(started: Bool) {
+        let wasTracking = isMenuTracking
+        if started {
+            menuTrackingDepth += 1
+        } else if menuTrackingDepth > 0 {
+            menuTrackingDepth -= 1
+        }
+        isMenuTracking = menuTrackingDepth > 0
+        if wasTracking && !isMenuTracking {
+            refreshHoverState()
+        }
     }
 
     private func handleMouseEvent(_ event: NSEvent?) {
@@ -1330,6 +1377,9 @@ final class HoverControlView: NSView {
 
     private func updateHoverState(with event: NSEvent?) {
         guard let coordinator = coordinator, let window = window else { return }
+        if isMenuTracking {
+            return
+        }
 
         let isHoveringNow = window.frame.contains(NSEvent.mouseLocation)
         if coordinator.isHovering != isHoveringNow {
