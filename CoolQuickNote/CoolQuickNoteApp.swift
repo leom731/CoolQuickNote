@@ -145,6 +145,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var frontAppObserver: NSObjectProtocol?
     @Published var noteCount: Int = 0
     @Published var activeNoteId: UUID?
+    @Published var areNotesHidden: Bool = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set up menu bar icon
@@ -196,13 +197,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             button.image?.isTemplate = true
         }
 
+        updateMenuBarMenu()
+    }
+
+    private func updateMenuBarMenu() {
         let menu = NSMenu()
 
         menu.addItem(NSMenuItem(title: "New Note", action: #selector(createNewNote), keyEquivalent: "n"))
         menu.addItem(NSMenuItem.separator())
+
+        let hideShowTitle = areNotesHidden ? "Show All Notes" : "Hide All Notes"
+        let hideShowItem = NSMenuItem(title: hideShowTitle, action: #selector(toggleNotesVisibilityAction), keyEquivalent: "h")
+        menu.addItem(hideShowItem)
+
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit CoolQuickNote", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         statusItem?.menu = menu
+    }
+
+    @objc private func toggleNotesVisibilityAction() {
+        toggleNotesVisibility()
     }
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
@@ -438,6 +453,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
+    // MARK: - Hide/Show All Notes
+
+    func hideAllNotes() {
+        for panel in notePanels.values {
+            panel.orderOut(nil)
+        }
+        for panel in settingsPanels.values {
+            panel.orderOut(nil)
+        }
+        areNotesHidden = true
+        updateMenuBarMenu()
+    }
+
+    func showAllNotes() {
+        for panel in notePanels.values {
+            panel.orderFrontRegardless()
+        }
+        for panel in settingsPanels.values {
+            panel.orderFrontRegardless()
+        }
+        areNotesHidden = false
+        NSApp.activate(ignoringOtherApps: true)
+        updateMenuBarMenu()
+    }
+
+    func toggleNotesVisibility() {
+        if areNotesHidden {
+            showAllNotes()
+        } else {
+            hideAllNotes()
+        }
+    }
+
     private func hideStandardWindowButtons(for panel: NSPanel) {
         let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
@@ -650,8 +698,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            // No visible windows - create a new note when dock icon is clicked
+        if areNotesHidden {
+            // Notes are hidden - show them when dock icon is clicked
+            showAllNotes()
+        } else if !flag {
+            // No visible windows and notes aren't hidden - create a new note
             createNewNote()
         }
         return true
@@ -723,6 +774,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     private func refreshNoteVisibilityForActiveSpace() {
+        // Don't show notes if user has hidden them
+        if areNotesHidden {
+            return
+        }
+
         let activeSpaceIsFullscreen = isActiveSpaceFullscreen()
         for (id, panel) in notePanels {
             let stayOnThisScreen = ensureStayOnThisScreenSetting(for: id)

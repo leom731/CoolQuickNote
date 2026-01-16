@@ -451,6 +451,12 @@ struct ContentView: View {
 
         Divider()
 
+        Button("Hide All Notes", systemImage: "eye.slash") {
+            appDelegate.hideAllNotes()
+        }
+
+        Divider()
+
         Button("Close Note", systemImage: "xmark.circle") {
             closeNote()
         }
