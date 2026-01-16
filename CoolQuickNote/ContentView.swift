@@ -18,7 +18,6 @@ struct ContentView: View {
 
     @State private var windowSize: CGSize = .zero
     @State private var effectiveFontSize: Double = 11.0
-    @State private var shouldUseScrollMode: Bool = false
     @State private var isTextEditorFocused: Bool = false
     @State private var currentWindow: NSWindow?
     @State private var pastedImage: NSImage?
@@ -133,7 +132,7 @@ struct ContentView: View {
                         .padding(.bottom, 12)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .onChange(of: noteContent) { _ in
-                            if dynamicSizingEnabled && !shouldUseScrollMode {
+                            if dynamicSizingEnabled {
                                 updateDynamicSizing(for: windowSize)
                             }
                         }
@@ -644,71 +643,70 @@ struct ContentView: View {
 
     // MARK: - Dynamic Sizing
 
-    private let baseWindowSize = CGSize(width: 300, height: 300)
-    private let baseFontSize: CGFloat = 11.0
     private let minFontSize: CGFloat = 11.0
-    private let maxFontSize: CGFloat = 72.0
+    private let maxFontSize: CGFloat = 200.0
 
-    private func calculateScale(for size: CGSize) -> CGFloat {
-        let widthScale = size.width / baseWindowSize.width
-        let heightScale = size.height / baseWindowSize.height
-        return min(widthScale, heightScale)
+    private func measureTextHeight(for text: String, font: NSFont, width: CGFloat) -> CGFloat {
+        guard !text.isEmpty, width > 0 else { return 0 }
+
+        let textStorage = NSTextStorage(string: text)
+        let textContainer = NSTextContainer(containerSize: CGSize(width: width, height: .greatestFiniteMagnitude))
+        let layoutManager = NSLayoutManager()
+
+        textContainer.lineFragmentPadding = 0
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        textStorage.addAttributes([.font: font], range: NSRange(location: 0, length: text.count))
+
+        layoutManager.glyphRange(for: textContainer)
+        return layoutManager.usedRect(for: textContainer).height
     }
 
     private func calculateOptimalFontSize(for text: String, in size: CGSize) -> Double {
-        guard !text.isEmpty else { return Double(baseFontSize) }
+        guard !text.isEmpty else { return Double(maxFontSize) }
 
-        let scale = calculateScale(for: size)
+        let padding: CGFloat = 24
+        let availableWidth = max(size.width - padding, 10)
+        let availableHeight = max(size.height - padding, 10)
 
-        let characterCount = text.count
-        let availableArea = size.width * size.height
-        let characterDensity = Double(characterCount) / Double(availableArea)
-
-        let lowDensity: Double = 0.001
-        let highDensity: Double = 0.01
-
-        var densityFactor: CGFloat = 1.0
-        if characterDensity < lowDensity {
-            densityFactor = 1.5
-        } else if characterDensity > highDensity {
-            densityFactor = 0.6
-        } else {
-            let normalizedDensity = (characterDensity - lowDensity) / (highDensity - lowDensity)
-            densityFactor = 1.5 - (0.9 * CGFloat(normalizedDensity))
+        let fontForSize: (CGFloat) -> NSFont = { fontSize in
+            switch self.selectedFont {
+            case "handwritten":
+                return NSFont(name: "Bradley Hand", size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
+            default:
+                return NSFont.systemFont(ofSize: fontSize)
+            }
         }
 
-        let calculatedSize = baseFontSize * scale * densityFactor
-        let clampedSize = max(minFontSize, min(maxFontSize, calculatedSize))
+        var low = minFontSize
+        var high = maxFontSize
+        var bestFit = minFontSize
 
-        return Double(clampedSize)
-    }
+        while high - low > 0.5 {
+            let mid = (low + high) / 2
+            let font = fontForSize(mid)
+            let textHeight = measureTextHeight(for: text, font: font, width: availableWidth)
 
-    private func shouldEnterScrollMode(windowSize: CGSize) -> Bool {
-        windowSize.width < 200 || windowSize.height < 200
+            if textHeight <= availableHeight {
+                bestFit = mid
+                low = mid + 0.5
+            } else {
+                high = mid - 0.5
+            }
+        }
+
+        return Double(max(minFontSize, bestFit))
     }
 
     private func updateDynamicSizing(for size: CGSize) {
         windowSize = size
-        shouldUseScrollMode = shouldEnterScrollMode(windowSize: size)
         guard dynamicSizingEnabled else { return }
 
-        if !shouldUseScrollMode {
-            effectiveFontSize = calculateOptimalFontSize(for: noteContent, in: size)
-        }
+        effectiveFontSize = calculateOptimalFontSize(for: noteContent, in: size)
     }
 
     var currentNSFont: NSFont {
-        let size: CGFloat
-
-        if dynamicSizingEnabled {
-            if shouldUseScrollMode {
-                size = 14.0
-            } else {
-                size = CGFloat(effectiveFontSize)
-            }
-        } else {
-            size = CGFloat(fontSize)
-        }
+        let size: CGFloat = dynamicSizingEnabled ? CGFloat(effectiveFontSize) : CGFloat(fontSize)
 
         switch selectedFont {
         case "handwritten":
