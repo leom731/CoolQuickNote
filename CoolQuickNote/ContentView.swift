@@ -2,6 +2,35 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+private enum QuickNoteDateInsertion {
+    private static func formattedString(_ format: String, date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = format
+        return formatter.string(from: date)
+    }
+
+    static func dateString(date: Date) -> String {
+        formattedString("MMM dd, yyyy EEE", date: date)
+    }
+
+    static func timeString(date: Date) -> String {
+        formattedString("h:mm a", date: date)
+    }
+
+    static func dateTimeInsertString() -> String {
+        let now = Date()
+        return "\(dateString(date: now))\n\(timeString(date: now))\n"
+    }
+
+    static func dateInsertString() -> String {
+        "\(dateString(date: Date()))\n"
+    }
+
+    static func timeInsertString() -> String {
+        "\(timeString(date: Date()))\n"
+    }
+}
+
 struct ContentView: View {
     let noteId: UUID
     @ObservedObject var appDelegate: AppDelegate
@@ -44,23 +73,26 @@ struct ContentView: View {
     }
 
     private func formatCurrentDateTime() -> String {
-        let formatter = DateFormatter()
-
-        formatter.dateFormat = "MMM dd, yyyy EEE"
-        let dateString = formatter.string(from: Date())
-
-        formatter.dateFormat = "h:mm a"
-        let timeString = formatter.string(from: Date())
-
-        return "\(dateString)\n\(timeString)\n"
+        QuickNoteDateInsertion.dateTimeInsertString()
     }
 
     private func insertCurrentDateTime() {
-        let dateTime = formatCurrentDateTime()
+        insertText(QuickNoteDateInsertion.dateTimeInsertString())
+    }
+
+    private func insertCurrentDateOnly() {
+        insertText(QuickNoteDateInsertion.dateInsertString())
+    }
+
+    private func insertCurrentTimeOnly() {
+        insertText(QuickNoteDateInsertion.timeInsertString())
+    }
+
+    private func insertText(_ text: String) {
         if let textView = resolveTextView() {
-            textView.insertText(dateTime, replacementRange: textView.selectedRange())
+            textView.insertText(text, replacementRange: textView.selectedRange())
         } else {
-            noteContent.append(dateTime)
+            noteContent.append(text)
         }
     }
 
@@ -170,6 +202,14 @@ struct ContentView: View {
             Button(action: insertCurrentDateTime) {
                 Label("Insert Date & Time", systemImage: "calendar.badge.clock")
             }
+            Button(action: insertCurrentDateOnly) {
+                Label("Insert Date", systemImage: "calendar")
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            Button(action: insertCurrentTimeOnly) {
+                Label("Insert Time", systemImage: "clock")
+            }
+            .keyboardShortcut("t", modifiers: .command)
             Divider()
             backgroundColorMenu
             opacityMenu
@@ -921,6 +961,19 @@ final class TabInsertionTextView: NSTextView {
         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "a" {
             selectAll(nil)
             return true
+        }
+        if event.modifierFlags.contains(.command),
+           let key = event.charactersIgnoringModifiers?.lowercased() {
+            switch key {
+            case "d":
+                insertText(QuickNoteDateInsertion.dateInsertString(), replacementRange: selectedRange())
+                return true
+            case "t":
+                insertText(QuickNoteDateInsertion.timeInsertString(), replacementRange: selectedRange())
+                return true
+            default:
+                break
+            }
         }
         return super.performKeyEquivalent(with: event)
     }
