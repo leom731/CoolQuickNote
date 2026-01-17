@@ -525,7 +525,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         panel.isFloatingPanel = true
         panel.level = .floating
         if stayOnThisScreen {
-            panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+            panel.collectionBehavior = [.fullScreenAuxiliary]
         } else {
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         }
@@ -779,14 +779,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             return
         }
 
-        let activeSpaceIsFullscreen = isActiveSpaceFullscreen()
         for (id, panel) in notePanels {
             let stayOnThisScreen = ensureStayOnThisScreenSetting(for: id)
-            if stayOnThisScreen && activeSpaceIsFullscreen {
-                if panel.isVisible {
-                    panel.orderOut(nil)
-                }
-            } else if !panel.isVisible {
+            guard !stayOnThisScreen else { continue }
+            if !panel.isVisible {
                 panel.orderFrontRegardless()
             }
         }
@@ -850,23 +846,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return nil
     }
 
-    /// Attempts to move a window to a specific space
+    /// Best-effort: reapply space behavior if the window is already on the target space.
     private func moveWindow(_ window: NSWindow, toSpaceIdentifier spaceID: Int) {
-        // Store the target space for this window
-        // We'll use the collection behavior to handle the actual movement
         guard let panel = window as? NSPanel else { return }
-
-        // Temporarily set to canJoinAllSpaces to allow movement
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        // Show the window which should make it appear on all spaces temporarily
-        panel.orderFrontRegardless()
-
-        // After a brief delay, restore the moveToActiveSpace behavior
-        // This ensures the window is now on the correct space
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            panel.collectionBehavior = [.moveToActiveSpace]
-        }
+        guard let currentSpaceID = getCurrentSpaceIdentifier(for: panel),
+              currentSpaceID == spaceID else { return }
+        applySpaceBehavior(to: panel, stayOnThisScreen: true)
     }
 }
 
