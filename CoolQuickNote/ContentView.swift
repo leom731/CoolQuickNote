@@ -477,6 +477,13 @@ struct ContentView: View {
             }
         }
 
+        Button {
+            appDelegate.disableStayOnThisScreenForAllNotes()
+            stayOnThisScreen = false
+        } label: {
+            Text("Disable Stay on This Desktop for All Notes")
+        }
+
         Divider()
 
         Button("Minimize", systemImage: "minus.square") {

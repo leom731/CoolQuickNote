@@ -589,6 +589,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         refreshNoteVisibilityForActiveSpace()
     }
 
+    func disableStayOnThisScreenForAllNotes() {
+        let defaults = UserDefaults.standard
+        for (id, panel) in notePanels {
+            defaults.set(false, forKey: stayOnThisScreenKey(for: id))
+            applySpaceBehavior(to: panel, stayOnThisScreen: false)
+            saveSpaceIdentifier(for: id, spaceID: nil)
+        }
+
+        saveNotes()
+        refreshNoteVisibilityForActiveSpace()
+    }
+
     func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, stayOnThisScreen: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>) {
         // If settings panel already exists for this note, close it
         if let existingPanel = settingsPanels[noteId] {
