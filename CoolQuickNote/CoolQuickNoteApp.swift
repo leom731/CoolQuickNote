@@ -270,18 +270,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @objc func createNewNote() {
         let newNoteId = UUID()
 
-        // Get properties from active note if it exists
         var windowFrame: CGRect? = nil
         var opacity: Double = 1.0
         var backgroundColor = "yellow"
 
-        if let sourceId = activeNoteId,
-           let sourcePanel = notePanels[sourceId] {
-            // Copy size and position from source note, placing the new note beside it without overlap
-            let targetSize = sourcePanel.frame.size
-            windowFrame = nextWindowFrame(beside: sourcePanel, targetSize: targetSize)
+        let activePanel = activeNoteId.flatMap { notePanels[$0] }
+        let placementScreen = activePanel?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let defaultSize = CGSize(width: 300, height: 300)
+        let initialSize = CGSize(width: defaultSize.width * 0.75, height: defaultSize.height * 0.75)
+        let targetSize = activePanel?.frame.size ?? notePanels.values.first?.frame.size ?? initialSize
+        let spacing: CGFloat = 24
+        let preferredOrigin: CGPoint
+        if let activePanel {
+            preferredOrigin = CGPoint(x: activePanel.frame.maxX + spacing, y: activePanel.frame.origin.y)
+        } else {
+            preferredOrigin = defaultFrameForFirstLaunch(size: targetSize, on: placementScreen).origin
+        }
 
-            // Copy opacity and background color from UserDefaults
+        let existingFrames: [CGRect] = notePanels.values.compactMap { panel in
+            if let placementScreen,
+               let panelScreen = panel.screen,
+               panelScreen !== placementScreen {
+                return nil
+            }
+            return panel.frame
+        }
+
+        windowFrame = nextAvailableWindowFrame(
+            preferredOrigin: preferredOrigin,
+            targetSize: targetSize,
+            on: placementScreen,
+            avoiding: existingFrames
+        )
+
+        if let sourceId = activeNoteId, notePanels[sourceId] != nil {
             if let storedOpacity = UserDefaults.standard.object(forKey: "note_\(sourceId.uuidString)_opacity") as? Double {
                 opacity = storedOpacity
             }
@@ -304,61 +326,75 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         saveNotes()
     }
 
-    private func nextWindowFrame(beside sourcePanel: NSPanel, targetSize: CGSize) -> CGRect {
-        let spacing: CGFloat = 24
-        let sourceFrame = sourcePanel.frame
-        let visibleFrame = sourcePanel.screen?.visibleFrame ??
+    private func nextAvailableWindowFrame(
+        preferredOrigin: CGPoint,
+        targetSize: CGSize,
+        on screen: NSScreen?,
+        avoiding existingFrames: [CGRect]
+    ) -> CGRect {
+        let visibleFrame = screen?.visibleFrame ??
             NSScreen.main?.visibleFrame ??
             NSScreen.screens.first?.visibleFrame ??
-            NSRect(origin: sourceFrame.origin, size: targetSize)
+            NSRect(origin: preferredOrigin, size: targetSize)
+        let maxX = visibleFrame.maxX - targetSize.width
+        let maxY = visibleFrame.maxY - targetSize.height
+        let clampedX = maxX >= visibleFrame.minX
+            ? min(max(preferredOrigin.x, visibleFrame.minX), maxX)
+            : visibleFrame.minX
+        let clampedY = maxY >= visibleFrame.minY
+            ? min(max(preferredOrigin.y, visibleFrame.minY), maxY)
+            : visibleFrame.minY
+        let clampedPreferred = CGPoint(x: clampedX, y: clampedY)
 
-        func clampedY(_ proposedY: CGFloat) -> CGFloat {
-            min(max(proposedY, visibleFrame.minY), visibleFrame.maxY - targetSize.height)
+        guard maxX >= visibleFrame.minX, maxY >= visibleFrame.minY else {
+            return CGRect(origin: clampedPreferred, size: targetSize)
         }
 
-        func clampedX(_ proposedX: CGFloat) -> CGFloat {
-            min(max(proposedX, visibleFrame.minX), visibleFrame.maxX - targetSize.width)
+        if existingFrames.isEmpty {
+            return CGRect(origin: clampedPreferred, size: targetSize)
         }
 
-        // First try to the right of the source note
-        if sourceFrame.maxX + spacing + targetSize.width <= visibleFrame.maxX {
-            let origin = CGPoint(x: sourceFrame.maxX + spacing, y: clampedY(sourceFrame.origin.y))
+        let spacing: CGFloat = 24
+        let paddedFrames = existingFrames.map { $0.insetBy(dx: -spacing, dy: -spacing) }
+
+        func isFree(_ origin: CGPoint) -> Bool {
             let candidate = CGRect(origin: origin, size: targetSize)
-            return candidate
-        }
-
-        // If it won't fit, try to the left
-        if sourceFrame.minX - spacing - targetSize.width >= visibleFrame.minX {
-            let origin = CGPoint(x: sourceFrame.minX - spacing - targetSize.width, y: clampedY(sourceFrame.origin.y))
-            let candidate = CGRect(origin: origin, size: targetSize)
-            if visibleFrame.contains(candidate) {
-                return candidate
+            if !visibleFrame.contains(candidate) {
+                return false
             }
-        }
-
-        // Finally, try below the source note
-        let belowY = sourceFrame.minY - spacing - targetSize.height
-        if belowY >= visibleFrame.minY {
-            let origin = CGPoint(x: clampedX(sourceFrame.origin.x), y: belowY)
-            let candidate = CGRect(origin: origin, size: targetSize)
-            if visibleFrame.contains(candidate) {
-                return candidate
+            for frame in paddedFrames where candidate.intersects(frame) {
+                return false
             }
+            return true
         }
 
-        // Try above the source note if there is space
-        let aboveY = sourceFrame.maxY + spacing
-        if aboveY + targetSize.height <= visibleFrame.maxY {
-            let origin = CGPoint(x: clampedX(sourceFrame.origin.x), y: aboveY)
-            let candidate = CGRect(origin: origin, size: targetSize)
-            if visibleFrame.contains(candidate) {
-                return candidate
+        var bestOrigin: CGPoint?
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        var y = maxY
+
+        while y >= visibleFrame.minY {
+            var x = visibleFrame.minX
+            while x <= maxX {
+                let origin = CGPoint(x: x, y: y)
+                if isFree(origin) {
+                    let dx = origin.x - clampedPreferred.x
+                    let dy = origin.y - clampedPreferred.y
+                    let distance = dx * dx + dy * dy
+                    if distance < bestDistance {
+                        bestDistance = distance
+                        bestOrigin = origin
+                    }
+                }
+                x += spacing
             }
+            y -= spacing
         }
 
-        // Fallback: keep the window visible, even if we can't avoid overlap entirely
-        let origin = CGPoint(x: clampedX(sourceFrame.origin.x + spacing), y: clampedY(sourceFrame.origin.y))
-        return CGRect(origin: origin, size: targetSize)
+        if let bestOrigin {
+            return CGRect(origin: bestOrigin, size: targetSize)
+        }
+
+        return CGRect(origin: clampedPreferred, size: targetSize)
     }
 
     private func createNotePanel(with noteData: NoteData) {
@@ -429,8 +465,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         refreshNoteVisibilityForActiveSpace()
     }
 
-    private func defaultFrameForFirstLaunch(size: CGSize) -> CGRect {
-        let visibleFrame = NSScreen.main?.visibleFrame ??
+    private func defaultFrameForFirstLaunch(size: CGSize, on screen: NSScreen? = nil) -> CGRect {
+        let visibleFrame = screen?.visibleFrame ??
+            NSScreen.main?.visibleFrame ??
             NSScreen.screens.first?.visibleFrame ??
             NSRect(origin: .zero, size: size)
         let leftInset: CGFloat = 40
