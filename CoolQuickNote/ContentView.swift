@@ -251,10 +251,11 @@ struct ContentView: View {
         }
         .alert("Save Note", isPresented: $showCloseConfirmation) {
             Button("Save to Notes", action: saveToNotesApp)
+            Button("Save to Stickies", action: saveToStickiesApp)
             Button("Discard", role: .destructive, action: discardNote)
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Would you like to save this note to the Notes app?")
+            Text("Would you like to save this note to Notes or Stickies?")
         }
     }
 
@@ -619,21 +620,51 @@ struct ContentView: View {
         }
     }
 
-    private func escapeForAppleScript(_ text: String) -> String {
-        // Escape special characters and convert newlines to AppleScript's 'return' constant
-        let escaped = text
-            .replacingOccurrences(of: "\\", with: "\\\\")  // Escape backslashes first
-            .replacingOccurrences(of: "\"", with: "\\\"")  // Escape quotes
+    private func saveToStickiesApp() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(noteContent, forType: .string)
 
-        // Split by newlines and join with AppleScript's return constant
-        let lines = escaped.components(separatedBy: "\n")
-        if lines.count == 1 {
-            return "\"\(escaped)\""
+        let script = """
+        tell application "Stickies"
+            activate
+        end tell
+        tell application "System Events"
+            repeat 30 times
+                if exists process "Stickies" then exit repeat
+                delay 0.1
+            end repeat
+            tell process "Stickies"
+                keystroke "n" using command down
+                delay 0.1
+                keystroke "v" using command down
+            end tell
+        end tell
+        """
+
+        var errorInfo: NSDictionary?
+        if let appleScript = NSAppleScript(source: script) {
+            appleScript.executeAndReturnError(&errorInfo)
+        } else {
+            errorInfo = [NSAppleScript.errorMessage: "Unable to compile AppleScript"]
         }
 
-        // Build AppleScript concatenation: "line1" & return & "line2" & return & "line3"
-        let quotedLines = lines.map { "\"\($0)\"" }
-        return quotedLines.joined(separator: " & return & ")
+        if let errorInfo {
+            let errorMessage = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown error"
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Failed to Save to Stickies"
+                alert.informativeText = errorMessage
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+            return
+        }
+
+        DispatchQueue.main.async {
+            self.appDelegate.closeNote(id: self.noteId)
+        }
     }
 
     private func discardNote() {
