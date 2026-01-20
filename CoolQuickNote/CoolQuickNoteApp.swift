@@ -504,13 +504,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func showAllNotes() {
-        for panel in notePanels.values {
-            panel.orderFrontRegardless()
+        areNotesHidden = false
+
+        for (id, panel) in notePanels {
+            let stayOnThisScreen = ensureStayOnThisScreenSetting(for: id)
+
+            if stayOnThisScreen {
+                if panel.isOnActiveSpace {
+                    panel.orderFrontRegardless()
+                }
+            } else {
+                panel.orderFrontRegardless()
+            }
         }
         for panel in settingsPanels.values {
             panel.orderFrontRegardless()
         }
-        areNotesHidden = false
         NSApp.activate(ignoringOtherApps: true)
         updateMenuBarMenu()
     }
@@ -561,8 +570,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Always keep note windows floating on top
         panel.isFloatingPanel = true
         panel.level = .floating
+
         if stayOnThisScreen {
-            panel.collectionBehavior = [.fullScreenAuxiliary]
+            panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         } else {
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         }
@@ -572,21 +582,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         guard let panel = notePanels[noteId] else { return }
         applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen)
 
-        // If enabling "Stay on this desktop", capture the current space
         if stayOnThisScreen {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                guard let self = self, let panel = self.notePanels[noteId] else { return }
-                if let spaceID = self.getCurrentSpaceIdentifier(for: panel) {
-                    self.saveSpaceIdentifier(for: noteId, spaceID: spaceID)
-                }
+            if let spaceID = getCurrentSpaceIdentifier(for: panel) {
+                saveSpaceIdentifier(for: noteId, spaceID: spaceID)
             }
         } else {
-            // If disabling, clear the saved space identifier
             saveSpaceIdentifier(for: noteId, spaceID: nil)
         }
 
+        panel.orderFrontRegardless()
         saveNotes()
-        refreshNoteVisibilityForActiveSpace()
     }
 
     func disableStayOnThisScreenForAllNotes() {
@@ -594,11 +599,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         for (id, panel) in notePanels {
             defaults.set(false, forKey: stayOnThisScreenKey(for: id))
             applySpaceBehavior(to: panel, stayOnThisScreen: false)
-            saveSpaceIdentifier(for: id, spaceID: nil)
+            // Show the note on all spaces
+            panel.orderFrontRegardless()
         }
 
         saveNotes()
-        refreshNoteVisibilityForActiveSpace()
     }
 
     func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, stayOnThisScreen: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>) {
@@ -830,9 +835,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         for (id, panel) in notePanels {
             let stayOnThisScreen = ensureStayOnThisScreenSetting(for: id)
-            guard !stayOnThisScreen else { continue }
-            if !panel.isVisible {
-                panel.orderFrontRegardless()
+
+            if stayOnThisScreen {
+                if panel.isOnActiveSpace {
+                    if !panel.isVisible {
+                        panel.orderFrontRegardless()
+                    }
+                }
+            } else {
+                // Notes without "Stay on This Desktop" are always visible
+                if !panel.isVisible {
+                    panel.orderFrontRegardless()
+                }
             }
         }
     }
