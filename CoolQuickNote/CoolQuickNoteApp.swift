@@ -13,6 +13,7 @@ struct NoteData: Codable, Identifiable {
     var stayOnThisScreen: Bool
     var dynamicSizingEnabled: Bool
     var noteOpacity: Double
+    var isReadingAid: Bool
     var windowFrame: CGRect?
     var savedSpaceIdentifier: Int?
 
@@ -25,6 +26,7 @@ struct NoteData: Codable, Identifiable {
          stayOnThisScreen: Bool = false,
          dynamicSizingEnabled: Bool = false,
          noteOpacity: Double = 1.0,
+         isReadingAid: Bool = false,
          windowFrame: CGRect? = nil,
          savedSpaceIdentifier: Int? = nil) {
         self.id = id
@@ -36,6 +38,7 @@ struct NoteData: Codable, Identifiable {
         self.stayOnThisScreen = stayOnThisScreen
         self.dynamicSizingEnabled = dynamicSizingEnabled
         self.noteOpacity = noteOpacity
+        self.isReadingAid = isReadingAid
         self.windowFrame = windowFrame
         self.savedSpaceIdentifier = savedSpaceIdentifier
     }
@@ -53,6 +56,7 @@ extension NoteData {
         case alwaysOnTop
         case dynamicSizingEnabled
         case noteOpacity
+        case isReadingAid
         case windowFrame
         case savedSpaceIdentifier
     }
@@ -74,6 +78,7 @@ extension NoteData {
         }
         dynamicSizingEnabled = try container.decodeIfPresent(Bool.self, forKey: .dynamicSizingEnabled) ?? false
         noteOpacity = try container.decodeIfPresent(Double.self, forKey: .noteOpacity) ?? 1.0
+        isReadingAid = try container.decodeIfPresent(Bool.self, forKey: .isReadingAid) ?? false
         windowFrame = try container.decodeIfPresent(CGRect.self, forKey: .windowFrame)
         savedSpaceIdentifier = try container.decodeIfPresent(Int.self, forKey: .savedSpaceIdentifier)
     }
@@ -89,6 +94,7 @@ extension NoteData {
         try container.encode(stayOnThisScreen, forKey: .stayOnThisScreen)
         try container.encode(dynamicSizingEnabled, forKey: .dynamicSizingEnabled)
         try container.encode(noteOpacity, forKey: .noteOpacity)
+        try container.encode(isReadingAid, forKey: .isReadingAid)
         try container.encodeIfPresent(windowFrame, forKey: .windowFrame)
         try container.encodeIfPresent(savedSpaceIdentifier, forKey: .savedSpaceIdentifier)
     }
@@ -112,6 +118,9 @@ struct CoolQuickNoteApp: App {
                     appDelegate.createNewNote()
                 }
                 .keyboardShortcut("n", modifiers: .command)
+                Button("New Reading Aid") {
+                    appDelegate.createReadingAidNote()
+                }
             }
             CommandGroup(replacing: .pasteboard) {
                 Button("Cut") {
@@ -204,6 +213,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         let menu = NSMenu()
 
         menu.addItem(NSMenuItem(title: "New Note", action: #selector(createNewNote), keyEquivalent: "n"))
+        menu.addItem(NSMenuItem(title: "New Reading Aid", action: #selector(createReadingAidNote), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
 
         let hideShowTitle = areNotesHidden ? "Show All Notes" : "Hide All Notes"
@@ -267,18 +277,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return activeNoteId
     }
 
+    private enum NoteCreationStyle {
+        case standard
+        case readingAid
+    }
+
     @objc func createNewNote() {
+        createNote(style: .standard)
+    }
+
+    @objc func createReadingAidNote() {
+        createNote(style: .readingAid)
+    }
+
+    private func createNote(style: NoteCreationStyle) {
         let newNoteId = UUID()
 
         var windowFrame: CGRect? = nil
         var opacity: Double = 1.0
         var backgroundColor = "yellow"
+        var isReadingAid = false
 
         let activePanel = activeNoteId.flatMap { notePanels[$0] }
         let placementScreen = activePanel?.screen ?? NSScreen.main ?? NSScreen.screens.first
-        let defaultSize = CGSize(width: 300, height: 300)
-        let initialSize = CGSize(width: defaultSize.width * 0.75, height: defaultSize.height * 0.75)
-        let targetSize = activePanel?.frame.size ?? notePanels.values.first?.frame.size ?? initialSize
+        let targetSize: CGSize
+        switch style {
+        case .standard:
+            let defaultSize = CGSize(width: 300, height: 300)
+            let initialSize = CGSize(width: defaultSize.width * 0.75, height: defaultSize.height * 0.75)
+            targetSize = activePanel?.frame.size ?? notePanels.values.first?.frame.size ?? initialSize
+        case .readingAid:
+            isReadingAid = true
+            targetSize = readingAidInitialSize(on: placementScreen)
+        }
+
         let spacing: CGFloat = 24
         let preferredOrigin: CGPoint
         if let activePanel {
@@ -312,14 +344,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             }
         }
 
+        if isReadingAid {
+            opacity = 0.2
+        }
+
         // Seed defaults so the new note picks up the copied appearance immediately
         UserDefaults.standard.set(opacity, forKey: "note_\(newNoteId.uuidString)_opacity")
         UserDefaults.standard.set(backgroundColor, forKey: "note_\(newNoteId.uuidString)_backgroundColor")
+        UserDefaults.standard.set(isReadingAid, forKey: readingAidKey(for: newNoteId))
+        if isReadingAid {
+            UserDefaults.standard.set("", forKey: "note_\(newNoteId.uuidString)_content")
+        }
 
         let noteData = NoteData(
             id: newNoteId,
             backgroundColorName: backgroundColor,
             noteOpacity: opacity,
+            isReadingAid: isReadingAid,
             windowFrame: windowFrame
         )
         createNotePanel(with: noteData)
@@ -397,6 +438,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return CGRect(origin: clampedPreferred, size: targetSize)
     }
 
+    private func readingAidInitialSize(on screen: NSScreen?) -> CGSize {
+        let fallbackFrame = CGRect(x: 0, y: 0, width: 600, height: 400)
+        let visibleFrame = screen?.visibleFrame ??
+            NSScreen.main?.visibleFrame ??
+            NSScreen.screens.first?.visibleFrame ??
+            fallbackFrame
+        let targetWidth = max(visibleFrame.width * 0.5, 200)
+
+        let font = NSFont.systemFont(ofSize: 11)
+        let lineHeight = font.ascender - font.descender + font.leading
+        let textHeight = lineHeight * 5
+        let chromeHeight: CGFloat = 52
+        let targetHeight = max(textHeight + chromeHeight, 80)
+
+        return CGSize(width: targetWidth, height: targetHeight)
+    }
+
     private func createNotePanel(with noteData: NoteData) {
         // Create the note panel
         let defaultSize = CGSize(width: 300, height: 300)
@@ -425,7 +483,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         hideStandardWindowButtons(for: panel)
 
         // Set size constraints
-        panel.contentMinSize = CGSize(width: 200, height: 200)
+        let readingAidStorageKey = readingAidKey(for: noteData.id)
+        if UserDefaults.standard.object(forKey: readingAidStorageKey) == nil {
+            UserDefaults.standard.set(noteData.isReadingAid, forKey: readingAidStorageKey)
+        }
+        let isReadingAid = UserDefaults.standard.bool(forKey: readingAidStorageKey)
+        panel.contentMinSize = isReadingAid
+            ? CGSize(width: 200, height: 80)
+            : CGSize(width: 200, height: 200)
 
         // Set SwiftUI content with note ID
         let hostingView = NSHostingView(rootView: ContentView(noteId: noteData.id, appDelegate: self))
@@ -548,6 +613,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     private func alwaysOnTopKey(for noteId: UUID) -> String {
         "note_\(noteId.uuidString)_alwaysOnTop"
+    }
+
+    private func readingAidKey(for noteId: UUID) -> String {
+        "note_\(noteId.uuidString)_readingAid"
     }
 
     func ensureStayOnThisScreenSetting(for noteId: UUID, fallback: Bool = false) -> Bool {
@@ -796,6 +865,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 stayOnThisScreen: ensureStayOnThisScreenSetting(for: id),
                 dynamicSizingEnabled: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_dynamicSizing") as? Bool ?? false,
                 noteOpacity: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_opacity") as? Double ?? 1.0,
+                isReadingAid: UserDefaults.standard.bool(forKey: readingAidKey(for: id)),
                 windowFrame: panel.frame,
                 savedSpaceIdentifier: existingSavedSpaceID
             )

@@ -44,6 +44,7 @@ struct ContentView: View {
     @AppStorage var dynamicSizingEnabled: Bool
     @AppStorage var noteOpacity: Double
     @AppStorage var disappearOnHover: Bool
+    @AppStorage var isReadingAid: Bool
 
     @State private var windowSize: CGSize = .zero
     @State private var effectiveFontSize: Double = 11.0
@@ -70,6 +71,7 @@ struct ContentView: View {
         _dynamicSizingEnabled = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_dynamicSizing")
         _noteOpacity = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_opacity")
         _disappearOnHover = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_disappearOnHover")
+        _isReadingAid = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_readingAid")
     }
 
     private func formatCurrentDateTime() -> String {
@@ -226,7 +228,7 @@ struct ContentView: View {
         }
         .background(WindowAccessor(window: $currentWindow))
         .onAppear {
-            if noteContent.isEmpty {
+            if noteContent.isEmpty && !isReadingAid {
                 noteContent = formatCurrentDateTime()
             }
 
@@ -312,6 +314,10 @@ struct ContentView: View {
 
         Button(action: createNewNote) {
             Label("New Note", systemImage: "plus.circle")
+        }
+
+        Button(action: createReadingAidNote) {
+            Label("New Reading Aid", systemImage: "book")
         }
     }
 
@@ -482,7 +488,7 @@ struct ContentView: View {
             appDelegate.disableStayOnThisScreenForAllNotes()
             stayOnThisScreen = false
         } label: {
-            Text("Disable Stay on This Desktop for All Notes")
+            Text("Show All Note on All Desktop")
         }
 
         Divider()
@@ -527,6 +533,11 @@ struct ContentView: View {
     private func createNewNote() {
         appDelegate.activeNoteId = noteId
         appDelegate.createNewNote()
+    }
+
+    private func createReadingAidNote() {
+        appDelegate.activeNoteId = noteId
+        appDelegate.createReadingAidNote()
     }
 
     private func closeNote() {
