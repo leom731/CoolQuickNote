@@ -317,7 +317,7 @@ struct ContentView: View {
         }
 
         Button(action: createReadingAidNote) {
-            Label("New Reading Aid", systemImage: "book")
+            Label("                                                                        nReading Aid", systemImage: "book")
         }
     }
 
@@ -483,13 +483,15 @@ struct ContentView: View {
                 Text("Stay on This Desktop")
             }
         }
+        .keyboardShortcut("l", modifiers: .command)
 
         Button {
             appDelegate.disableStayOnThisScreenForAllNotes()
             stayOnThisScreen = false
         } label: {
-            Text("Show All Note on All Desktop")
+            Text("Show All Notes on All Desktops")
         }
+        .keyboardShortcut("g", modifiers: .command)
 
         Divider()
 

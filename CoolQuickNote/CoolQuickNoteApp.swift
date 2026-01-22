@@ -138,6 +138,16 @@ struct CoolQuickNoteApp: App {
                 }
                 .keyboardShortcut("v", modifiers: .command)
             }
+            CommandMenu("Note Options") {
+                Button("Stay on This Desktop") {
+                    appDelegate.toggleStayOnThisDesktopForActiveNote()
+                }
+                .keyboardShortcut("l", modifiers: .command)
+                Button("Show All Notes on All Desktops") {
+                    appDelegate.disableStayOnThisScreenForAllNotes()
+                }
+                .keyboardShortcut("g", modifiers: .command)
+            }
         }
     }
 }
@@ -595,6 +605,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         } else {
             hideAllNotes()
         }
+    }
+
+    func toggleStayOnThisDesktopForActiveNote() {
+        guard let noteId = resolveActiveNoteId() else { return }
+        let current = ensureStayOnThisScreenSetting(for: noteId)
+        let newValue = !current
+        UserDefaults.standard.set(newValue, forKey: stayOnThisScreenKey(for: noteId))
+        updateStayOnThisScreen(for: noteId, stayOnThisScreen: newValue)
     }
 
     private func hideStandardWindowButtons(for panel: NSPanel) {
