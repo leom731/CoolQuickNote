@@ -218,6 +218,8 @@ struct ContentView: View {
             Divider()
             settingsCommands
             Divider()
+            readingAidPresetsMenu
+            Divider()
             noteOptionsMenu
             Divider()
             windowActionsMenu
@@ -317,7 +319,7 @@ struct ContentView: View {
         }
 
         Button(action: createReadingAidNote) {
-            Label("                                                                        nReading Aid", systemImage: "book")
+            Label("   Reading Aid", systemImage: "book")
         }
     }
 
@@ -385,6 +387,34 @@ struct ContentView: View {
             }
         } label: {
             Label("Background Color", systemImage: "paintpalette")
+        }
+    }
+
+    @ViewBuilder
+    private var readingAidPresetsMenu: some View {
+        Menu {
+            if isReadingAid {
+                Button(action: saveCurrentReadingAid) {
+                    Label("Save Reading Aid", systemImage: "square.and.arrow.down")
+                }
+                Divider()
+            }
+
+            if appDelegate.readingAidPresets.isEmpty {
+                Button("No Saved Reading Aids") {}
+                    .disabled(true)
+            } else {
+                ForEach(appDelegate.readingAidPresets) { preset in
+                    Button(action: {
+                        appDelegate.activeNoteId = noteId
+                        appDelegate.createReadingAidNoteFromPreset(preset)
+                    }) {
+                        Text(preset.name)
+                    }
+                }
+            }
+        } label: {
+            Label("Reading Aids", systemImage: "book")
         }
     }
 
@@ -682,6 +712,35 @@ struct ContentView: View {
 
     private func discardNote() {
         appDelegate.closeNote(id: noteId)
+    }
+
+    private func saveCurrentReadingAid() {
+        guard isReadingAid else { return }
+        guard let name = promptForReadingAidName() else { return }
+        let size = resolveWindow()?.frame.size ?? windowSize
+        guard size.width > 0, size.height > 0 else { return }
+        appDelegate.saveReadingAidPreset(
+            name: name,
+            size: size,
+            backgroundColorName: backgroundColorName
+        )
+    }
+
+    private func promptForReadingAidName() -> String? {
+        let alert = NSAlert()
+        alert.messageText = "Save Reading Aid"
+        alert.informativeText = "Enter a name for this reading aid preset."
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        textField.placeholderString = "Reading aid name"
+        alert.accessoryView = textField
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = textField
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return nil }
+        let trimmed = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func minimizeCurrentWindow() {

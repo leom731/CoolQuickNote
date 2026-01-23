@@ -44,6 +44,20 @@ struct NoteData: Codable, Identifiable {
     }
 }
 
+struct ReadingAidPreset: Codable, Identifiable, Equatable {
+    let id: UUID
+    var name: String
+    var backgroundColorName: String
+    var size: CGSize
+
+    init(id: UUID = UUID(), name: String, backgroundColorName: String, size: CGSize) {
+        self.id = id
+        self.name = name
+        self.backgroundColorName = backgroundColorName
+        self.size = size
+    }
+}
+
 extension NoteData {
     private enum CodingKeys: String, CodingKey {
         case id
@@ -159,12 +173,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var tipJarPanel: NSPanel?
     private var tipJarPanelDelegate: TipJarPanelDelegate?
     private let notesKey = "savedNotes"
+    private let readingAidPresetsKey = "readingAidPresets"
     private var statusItem: NSStatusItem?
     private var spaceObserver: NSObjectProtocol?
     private var frontAppObserver: NSObjectProtocol?
     @Published var noteCount: Int = 0
     @Published var activeNoteId: UUID?
     @Published var areNotesHidden: Bool = false
+    @Published var readingAidPresets: [ReadingAidPreset] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set up menu bar icon
@@ -179,6 +195,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         )
 
         // Load existing notes or create a default one
+        readingAidPresets = loadReadingAidPresets()
         let savedNotes = loadNotes()
 
         if savedNotes.isEmpty {
@@ -300,7 +317,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         createNote(style: .readingAid)
     }
 
-    private func createNote(style: NoteCreationStyle) {
+    func createReadingAidNoteFromPreset(_ preset: ReadingAidPreset) {
+        createNote(style: .readingAid, readingAidPreset: preset)
+    }
+
+    private func createNote(style: NoteCreationStyle, readingAidPreset: ReadingAidPreset? = nil) {
         let newNoteId = UUID()
 
         var windowFrame: CGRect? = nil
@@ -318,7 +339,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             targetSize = activePanel?.frame.size ?? notePanels.values.first?.frame.size ?? initialSize
         case .readingAid:
             isReadingAid = true
-            targetSize = readingAidInitialSize(on: placementScreen)
+            targetSize = readingAidPreset?.size ?? readingAidInitialSize(on: placementScreen)
         }
 
         let spacing: CGFloat = 24
@@ -352,6 +373,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             if let storedBackgroundColor = UserDefaults.standard.string(forKey: "note_\(sourceId.uuidString)_backgroundColor") {
                 backgroundColor = storedBackgroundColor
             }
+        }
+
+        if let readingAidPreset {
+            backgroundColor = readingAidPreset.backgroundColorName
         }
 
         if isReadingAid {
@@ -693,6 +718,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         saveNotes()
     }
 
+    func saveReadingAidPreset(name: String, size: CGSize, backgroundColorName: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+
+        var presets = readingAidPresets
+        if let index = presets.firstIndex(where: { $0.name.compare(trimmedName, options: .caseInsensitive) == .orderedSame }) {
+            let existing = presets[index]
+            presets[index] = ReadingAidPreset(
+                id: existing.id,
+                name: trimmedName,
+                backgroundColorName: backgroundColorName,
+                size: size
+            )
+        } else {
+            presets.append(
+                ReadingAidPreset(
+                    name: trimmedName,
+                    backgroundColorName: backgroundColorName,
+                    size: size
+                )
+            )
+        }
+
+        readingAidPresets = presets
+        persistReadingAidPresets(presets)
+    }
+
     func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, stayOnThisScreen: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>) {
         // If settings panel already exists for this note, close it
         if let existingPanel = settingsPanels[noteId] {
@@ -1003,6 +1055,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         guard let currentSpaceID = getCurrentSpaceIdentifier(for: panel),
               currentSpaceID == spaceID else { return }
         applySpaceBehavior(to: panel, stayOnThisScreen: true)
+    }
+
+    private func loadReadingAidPresets() -> [ReadingAidPreset] {
+        guard let data = UserDefaults.standard.data(forKey: readingAidPresetsKey),
+              let presets = try? JSONDecoder().decode([ReadingAidPreset].self, from: data) else {
+            return []
+        }
+        return presets
+    }
+
+    private func persistReadingAidPresets(_ presets: [ReadingAidPreset]) {
+        if let encoded = try? JSONEncoder().encode(presets) {
+            UserDefaults.standard.set(encoded, forKey: readingAidPresetsKey)
+        }
     }
 }
 
