@@ -54,6 +54,9 @@ struct ContentView: View {
     @State private var isHovering: Bool = false
     @State private var isCommandKeyPressed: Bool = false
     @State private var showCloseConfirmation: Bool = false
+    @State private var isShowingReadingAidPrompt: Bool = false
+    @State private var readingAidNameDraft: String = ""
+    @FocusState private var isReadingAidNameFocused: Bool
     private let persistenceQueue = DispatchQueue(label: "com.coolquicknote.image.persistence", qos: .userInitiated)
 
     init(noteId: UUID, appDelegate: AppDelegate) {
@@ -123,7 +126,11 @@ struct ContentView: View {
     }
 
     private var shouldHideOnHover: Bool {
-        disappearOnHover && isHovering && !isCommandKeyPressed
+        disappearOnHover && isHovering && !isCommandKeyPressed && !isShowingReadingAidPrompt
+    }
+
+    private var trimmedReadingAidName: String {
+        readingAidNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var body: some View {
@@ -197,6 +204,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(false)
         )
+        .overlay(readingAidPromptOverlay)
         .contextMenu {
             Button(action: pasteImageFromClipboard) {
                 Label("Paste Image", systemImage: "doc.on.clipboard")
@@ -260,6 +268,49 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Would you like to save this note to Notes or Stickies?")
+        }
+    }
+
+    @ViewBuilder
+    private var readingAidPromptOverlay: some View {
+        if isShowingReadingAidPrompt {
+            ZStack {
+                Color.black.opacity(0.25)
+                    .ignoresSafeArea()
+                VStack(spacing: 12) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "book")
+                            .font(.system(size: 22, weight: .semibold))
+                        Text("Save Reading Aid")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    Text("Enter a name for this reading aid preset.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    TextField("Reading aid name", text: $readingAidNameDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 240)
+                        .focused($isReadingAidNameFocused)
+                    HStack(spacing: 12) {
+                        Button("Cancel") {
+                            isShowingReadingAidPrompt = false
+                        }
+                        .keyboardShortcut(.cancelAction)
+                        Button("Save") {
+                            confirmReadingAidSave()
+                        }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(trimmedReadingAidName.isEmpty)
+                    }
+                }
+                .padding(16)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .frame(maxWidth: 320)
+            }
+            .transition(.opacity)
+            .onAppear {
+                isReadingAidNameFocused = true
+            }
         }
     }
 
@@ -728,43 +779,21 @@ struct ContentView: View {
 
     private func saveCurrentReadingAid() {
         guard isReadingAid else { return }
-        let size = resolveWindow()?.frame.size ?? windowSize
-        guard size.width > 0, size.height > 0 else { return }
-        promptForReadingAidName { name in
-            guard let name else { return }
-            appDelegate.saveReadingAidPreset(
-                name: name,
-                size: size,
-                backgroundColorName: backgroundColorName
-            )
-        }
+        readingAidNameDraft = ""
+        isShowingReadingAidPrompt = true
     }
 
-    private func promptForReadingAidName(completion: @escaping (String?) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = "Save Reading Aid"
-        alert.informativeText = "Enter a name for this reading aid preset."
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-        textField.placeholderString = "Reading aid name"
-        alert.accessoryView = textField
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = textField
-        let handleResponse: (NSApplication.ModalResponse) -> Void = { response in
-            guard response == .alertFirstButtonReturn else {
-                completion(nil)
-                return
-            }
-            let trimmed = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            completion(trimmed.isEmpty ? nil : trimmed)
-        }
-
-        if let window = resolveWindow() {
-            alert.beginSheetModal(for: window, completionHandler: handleResponse)
-        } else {
-            let response = alert.runModal()
-            handleResponse(response)
-        }
+    private func confirmReadingAidSave() {
+        let name = trimmedReadingAidName
+        guard !name.isEmpty else { return }
+        let size = resolveWindow()?.frame.size ?? windowSize
+        guard size.width > 0, size.height > 0 else { return }
+        appDelegate.saveReadingAidPreset(
+            name: name,
+            size: size,
+            backgroundColorName: backgroundColorName
+        )
+        isShowingReadingAidPrompt = false
     }
 
     private func minimizeCurrentWindow() {
@@ -1331,6 +1360,8 @@ struct SettingsView: View {
                 Button("Done") {
                     if let settingsPanel = appDelegate.settingsPanels[noteId] {
                         settingsPanel.close()
+                    } else {
+                        NSApp.keyWindow?.close()
                     }
                 }
                 .keyboardShortcut(.defaultAction)

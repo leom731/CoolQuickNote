@@ -124,7 +124,7 @@ struct CoolQuickNoteApp: App {
 
     var body: some Scene {
         Settings {
-            EmptyView()
+            SettingsSceneView(appDelegate: appDelegate)
         }
         .commands {
             CommandGroup(after: .newItem) {
@@ -163,6 +163,75 @@ struct CoolQuickNoteApp: App {
                 .keyboardShortcut("g", modifiers: .command)
             }
         }
+    }
+}
+
+struct SettingsSceneView: View {
+    @ObservedObject var appDelegate: AppDelegate
+
+    var body: some View {
+        if let noteId = appDelegate.preferredNoteIdForSettings() {
+            NoteSettingsSceneView(noteId: noteId, appDelegate: appDelegate)
+        } else {
+            VStack(spacing: 16) {
+                Text("No active note")
+                    .font(.title2)
+                    .bold()
+                Text("Create or select a note to adjust its settings.")
+                    .foregroundColor(.secondary)
+                Button("New Note") {
+                    appDelegate.createNewNote()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .frame(width: 400, height: 240)
+            .padding(24)
+        }
+    }
+}
+
+struct NoteSettingsSceneView: View {
+    let noteId: UUID
+    @ObservedObject var appDelegate: AppDelegate
+
+    @AppStorage var selectedFont: String
+    @AppStorage var fontSize: Double
+    @AppStorage var fontColorName: String
+    @AppStorage var backgroundColorName: String
+    @AppStorage var stayOnThisScreen: Bool
+    @AppStorage var dynamicSizingEnabled: Bool
+    @AppStorage var noteOpacity: Double
+    @AppStorage var disappearOnHover: Bool
+
+    init(noteId: UUID, appDelegate: AppDelegate) {
+        self.noteId = noteId
+        self.appDelegate = appDelegate
+
+        _selectedFont = AppStorage(wrappedValue: "regular", "note_\(noteId.uuidString)_font")
+        _fontSize = AppStorage(wrappedValue: 11, "note_\(noteId.uuidString)_fontSize")
+        _fontColorName = AppStorage(wrappedValue: "blue", "note_\(noteId.uuidString)_fontColor")
+        _backgroundColorName = AppStorage(wrappedValue: "yellow", "note_\(noteId.uuidString)_backgroundColor")
+        let stayOnThisScreenKey = "note_\(noteId.uuidString)_stayOnThisScreen"
+        let stayOnThisScreenDefault = appDelegate.ensureStayOnThisScreenSetting(for: noteId)
+        _stayOnThisScreen = AppStorage(wrappedValue: stayOnThisScreenDefault, stayOnThisScreenKey)
+        _dynamicSizingEnabled = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_dynamicSizing")
+        _noteOpacity = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_opacity")
+        _disappearOnHover = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_disappearOnHover")
+    }
+
+    var body: some View {
+        SettingsView(
+            selectedFont: $selectedFont,
+            fontSize: $fontSize,
+            fontColorName: $fontColorName,
+            backgroundColorName: $backgroundColorName,
+            stayOnThisScreen: $stayOnThisScreen,
+            dynamicSizingEnabled: $dynamicSizingEnabled,
+            noteOpacity: $noteOpacity,
+            disappearOnHover: $disappearOnHover,
+            noteId: noteId,
+            appDelegate: appDelegate
+        )
     }
 }
 
@@ -302,6 +371,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             return noteId
         }
         return activeNoteId
+    }
+
+    func preferredNoteIdForSettings() -> UUID? {
+        resolveActiveNoteId() ?? notePanels.keys.first
     }
 
     private enum NoteCreationStyle {
@@ -684,7 +757,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         panel.level = .floating
 
         if stayOnThisScreen {
-            panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+            panel.collectionBehavior = [.stationary, .fullScreenAuxiliary]
         } else {
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         }
