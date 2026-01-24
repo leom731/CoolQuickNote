@@ -319,7 +319,7 @@ struct ContentView: View {
         }
 
         Button(action: createReadingAidNote) {
-            Label("   Reading Aid", systemImage: "book")
+            Label("Add Reading Aid", systemImage: "book")
         }
     }
 
@@ -411,6 +411,18 @@ struct ContentView: View {
                     }) {
                         Text(preset.name)
                     }
+                }
+                Divider()
+                Menu {
+                    ForEach(appDelegate.readingAidPresets) { preset in
+                        Button(role: .destructive) {
+                            appDelegate.deleteReadingAidPreset(preset)
+                        } label: {
+                            Text(preset.name)
+                        }
+                    }
+                } label: {
+                    Text("Delete Reading Aid")
                 }
             }
         } label: {
@@ -716,17 +728,19 @@ struct ContentView: View {
 
     private func saveCurrentReadingAid() {
         guard isReadingAid else { return }
-        guard let name = promptForReadingAidName() else { return }
         let size = resolveWindow()?.frame.size ?? windowSize
         guard size.width > 0, size.height > 0 else { return }
-        appDelegate.saveReadingAidPreset(
-            name: name,
-            size: size,
-            backgroundColorName: backgroundColorName
-        )
+        promptForReadingAidName { name in
+            guard let name else { return }
+            appDelegate.saveReadingAidPreset(
+                name: name,
+                size: size,
+                backgroundColorName: backgroundColorName
+            )
+        }
     }
 
-    private func promptForReadingAidName() -> String? {
+    private func promptForReadingAidName(completion: @escaping (String?) -> Void) {
         let alert = NSAlert()
         alert.messageText = "Save Reading Aid"
         alert.informativeText = "Enter a name for this reading aid preset."
@@ -736,11 +750,21 @@ struct ContentView: View {
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = textField
+        let handleResponse: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .alertFirstButtonReturn else {
+                completion(nil)
+                return
+            }
+            let trimmed = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            completion(trimmed.isEmpty ? nil : trimmed)
+        }
 
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return nil }
-        let trimmed = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        if let window = resolveWindow() {
+            alert.beginSheetModal(for: window, completionHandler: handleResponse)
+        } else {
+            let response = alert.runModal()
+            handleResponse(response)
+        }
     }
 
     private func minimizeCurrentWindow() {

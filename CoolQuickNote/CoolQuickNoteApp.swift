@@ -745,6 +745,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         persistReadingAidPresets(presets)
     }
 
+    func deleteReadingAidPreset(_ preset: ReadingAidPreset) {
+        let presets = readingAidPresets.filter { $0.id != preset.id }
+        readingAidPresets = presets
+        persistReadingAidPresets(presets)
+    }
+
     func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, stayOnThisScreen: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>) {
         // If settings panel already exists for this note, close it
         if let existingPanel = settingsPanels[noteId] {
