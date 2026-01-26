@@ -51,6 +51,7 @@ struct ContentView: View {
     @State private var isTextEditorFocused: Bool = false
     @State private var currentWindow: NSWindow?
     @State private var pastedImage: NSImage?
+    @State private var pastedImageData: Data?
     @State private var isHovering: Bool = false
     @State private var isCommandKeyPressed: Bool = false
     @State private var showCloseConfirmation: Bool = false
@@ -138,47 +139,46 @@ struct ContentView: View {
             topBar
 
             GeometryReader { geometry in
-                ZStack {
+                VStack(spacing: 0) {
                     if let image = pastedImage {
-                        Color.clear
-                            .overlay(
-                                Image(nsImage: image)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .clipped()
-                                    .padding(12)
-                            )
-                            .overlay(alignment: .topTrailing) {
-                                Button(action: clearPastedImage) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.gray.opacity(0.7))
-                                        .padding(8)
-                                        .background(.ultraThinMaterial, in: Capsule())
-                                }
-                                .buttonStyle(.plain)
-                                .padding(8)
-                                .help("Remove image")
+                        ZStack(alignment: .topTrailing) {
+                            Image(nsImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity)
+                                .clipped()
+                                .padding(12)
+
+                            Button(action: clearPastedImage) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.gray.opacity(0.7))
+                                    .padding(8)
+                                    .background(.ultraThinMaterial, in: Capsule())
                             }
-                    } else {
-                        NoteTextEditor(
-                            text: $noteContent,
-                            isFocused: $isTextEditorFocused,
-                            font: currentNSFont,
-                            textColor: currentFontNSColor,
-                            tabSpaces: "    "
-                        )
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 12)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .onChange(of: noteContent) { _ in
-                            if dynamicSizingEnabled {
-                                updateDynamicSizing(for: windowSize)
-                            }
+                            .buttonStyle(.plain)
+                            .padding(8)
+                            .help("Remove image")
+                        }
+                    }
+
+                    NoteTextEditor(
+                        text: $noteContent,
+                        isFocused: $isTextEditorFocused,
+                        font: currentNSFont,
+                        textColor: currentFontNSColor,
+                        tabSpaces: "    "
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onChange(of: noteContent) { _ in
+                        if dynamicSizingEnabled {
+                            updateDynamicSizing(for: windowSize)
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onChange(of: geometry.size) { newSize in
                     updateDynamicSizing(for: newSize)
                 }
@@ -238,10 +238,6 @@ struct ContentView: View {
         }
         .background(WindowAccessor(window: $currentWindow))
         .onAppear {
-            if noteContent.isEmpty && !isReadingAid {
-                noteContent = formatCurrentDateTime()
-            }
-
             loadStoredImage()
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -640,10 +636,8 @@ struct ContentView: View {
     }
 
     private func saveToNotesApp() {
-        // Copy the note content to clipboard (this preserves all formatting exactly)
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(noteContent, forType: .string)
+        // Copy note content (and any pasted image) to the clipboard.
+        preparePasteboardForExport()
 
         let script = """
         tell application "Notes"
@@ -727,9 +721,7 @@ struct ContentView: View {
     }
 
     private func saveToStickiesApp() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(noteContent, forType: .string)
+        preparePasteboardForExport()
 
         let script = """
         tell application "Stickies"
@@ -873,10 +865,17 @@ struct ContentView: View {
 
     private func persistImage(from data: Data) {
         let storageKey = imageStorageKey
+        if Thread.isMainThread {
+            pastedImageData = data
+        } else {
+            DispatchQueue.main.async {
+                self.pastedImageData = data
+            }
+        }
         persistenceQueue.async {
             autoreleasepool {
-                guard let image = NSImage(data: data) else { return }
                 UserDefaults.standard.set(data, forKey: storageKey)
+                guard let image = NSImage(data: data) else { return }
                 DispatchQueue.main.async {
                     self.pastedImage = image
                 }
@@ -888,11 +887,13 @@ struct ContentView: View {
         let storageKey = imageStorageKey
         persistenceQueue.async {
             autoreleasepool {
-                if let data = image.tiffRepresentation {
+                let data = image.tiffRepresentation
+                if let data {
                     UserDefaults.standard.set(data, forKey: storageKey)
                 }
                 DispatchQueue.main.async {
                     self.pastedImage = image
+                    self.pastedImageData = data
                 }
             }
         }
@@ -905,7 +906,88 @@ struct ContentView: View {
 
     private func clearPastedImage() {
         pastedImage = nil
+        pastedImageData = nil
         UserDefaults.standard.removeObject(forKey: imageStorageKey)
+    }
+
+    private func resolvedPastedImage() -> NSImage? {
+        if let image = pastedImage {
+            return image
+        }
+        if let data = pastedImageData, let image = NSImage(data: data) {
+            return image
+        }
+        guard let data = UserDefaults.standard.data(forKey: imageStorageKey) else { return nil }
+        return NSImage(data: data)
+    }
+
+    private func preparePasteboardForExport() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+
+        guard let image = resolvedPastedImage() else {
+            pasteboard.setString(noteContent, forType: .string)
+            return
+        }
+
+        let attributed = NSMutableAttributedString()
+
+        if noteContent.isEmpty {
+            attributed.append(NSAttributedString(string: " "))
+        } else {
+            attributed.append(NSAttributedString(string: noteContent))
+            attributed.append(NSAttributedString(string: "\n"))
+        }
+
+        let attachment = NSTextAttachment()
+        if let tiffData = image.tiffRepresentation {
+            let wrapper = FileWrapper(regularFileWithContents: tiffData)
+            wrapper.preferredFilename = "QuickNoteImage.tiff"
+            attachment.fileWrapper = wrapper
+        }
+        attachment.image = image
+        attributed.append(NSAttributedString(attachment: attachment))
+
+        let fullRange = NSRange(location: 0, length: attributed.length)
+
+        if let rtfd = try? attributed.data(
+            from: fullRange,
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+        ) {
+            pasteboard.setData(rtfd, forType: .rtfd)
+        } else if let rtf = try? attributed.data(
+            from: fullRange,
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        ) {
+            pasteboard.setData(rtf, forType: .rtf)
+        }
+
+        if !noteContent.isEmpty {
+            pasteboard.setString(noteContent, forType: .string)
+        }
+
+        if let tiffData = image.tiffRepresentation {
+            pasteboard.setData(tiffData, forType: .tiff)
+        }
+
+        if let originalData = pastedImageData {
+            if isPNGData(originalData) {
+                pasteboard.setData(originalData, forType: .png)
+            } else if isTIFFData(originalData) {
+                pasteboard.setData(originalData, forType: .tiff)
+            }
+        }
+    }
+
+    private func isPNGData(_ data: Data) -> Bool {
+        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        return data.starts(with: pngSignature)
+    }
+
+    private func isTIFFData(_ data: Data) -> Bool {
+        let littleEndian: [UInt8] = [0x49, 0x49, 0x2A, 0x00]
+        let bigEndian: [UInt8] = [0x4D, 0x4D, 0x00, 0x2A]
+        return data.starts(with: littleEndian) || data.starts(with: bigEndian)
     }
 
     // MARK: - Dynamic Sizing
