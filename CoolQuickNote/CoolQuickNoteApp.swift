@@ -982,8 +982,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             // Notes are hidden - show them when dock icon is clicked
             showAllNotes()
         } else if !flag {
-            // No visible windows and notes aren't hidden - create a new note
-            createNewNote()
+            if notePanels.isEmpty {
+                // No visible windows and no notes exist yet - create a new note
+                createNewNote()
+            } else {
+                // Notes exist but aren't visible - bring them forward instead of duplicating
+                showAllNotes()
+            }
         }
         return true
     }
