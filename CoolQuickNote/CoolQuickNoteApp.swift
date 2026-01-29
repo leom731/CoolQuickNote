@@ -202,6 +202,7 @@ struct NoteSettingsSceneView: View {
     @AppStorage var dynamicSizingEnabled: Bool
     @AppStorage var noteOpacity: Double
     @AppStorage var disappearOnHover: Bool
+    @AppStorage var isReadingAid: Bool
 
     init(noteId: UUID, appDelegate: AppDelegate) {
         self.noteId = noteId
@@ -217,6 +218,7 @@ struct NoteSettingsSceneView: View {
         _dynamicSizingEnabled = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_dynamicSizing")
         _noteOpacity = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_opacity")
         _disappearOnHover = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_disappearOnHover")
+        _isReadingAid = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_readingAid")
     }
 
     var body: some View {
@@ -230,7 +232,8 @@ struct NoteSettingsSceneView: View {
             noteOpacity: $noteOpacity,
             disappearOnHover: $disappearOnHover,
             noteId: noteId,
-            appDelegate: appDelegate
+            appDelegate: appDelegate,
+            isReadingAid: isReadingAid
         )
     }
 }
@@ -450,6 +453,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         if let readingAidPreset {
             backgroundColor = readingAidPreset.backgroundColorName
+        }
+
+        if isReadingAid && readingAidPreset == nil {
+            backgroundColor = "clear"
         }
 
         if isReadingAid {
@@ -824,7 +831,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         persistReadingAidPresets(presets)
     }
 
-    func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, stayOnThisScreen: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>) {
+    func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, stayOnThisScreen: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>, isReadingAid: Bool) {
         // If settings panel already exists for this note, close it
         if let existingPanel = settingsPanels[noteId] {
             // Remove child window relationship before closing
@@ -865,7 +872,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             noteOpacity: noteOpacity,
             disappearOnHover: disappearOnHover,
             noteId: noteId,
-            appDelegate: self
+            appDelegate: self,
+            isReadingAid: isReadingAid
         )
 
         let hostingView = NSHostingView(rootView: settingsView)

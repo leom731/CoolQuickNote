@@ -188,13 +188,19 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 100, minHeight: 60)
-        .background(currentBackgroundColor)
+        .background(isClearReadingAid ? Color.clear : currentBackgroundColor)
         .cornerRadius(12)
-        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+        .shadow(color: isClearReadingAid ? .clear : .black.opacity(0.2), radius: 8, x: 0, y: 4)
         .opacity(shouldHideOnHover ? 0 : noteOpacity)
         .animation(.easeInOut(duration: 0.2), value: isHovering)
         .animation(.easeInOut(duration: 0.2), value: isCommandKeyPressed)
         .animation(.easeInOut(duration: 0.2), value: noteOpacity)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isClearReadingAid ? Color.gray.opacity(0.6) : Color.clear, lineWidth: 2)
+                .allowsHitTesting(false)
+        )
+        .contentShape(Rectangle())
         .overlay(
             HoverAndWindowController(
                 isHovering: $isHovering,
@@ -313,25 +319,19 @@ struct ContentView: View {
     private var topBar: some View {
         HStack(spacing: 8) {
             Button(action: openSettings) {
-                Image(systemName: "gear")
-                    .font(.system(size: 12))
-                    .foregroundColor(.gray.opacity(0.6))
+                topBarIcon("gear")
             }
             .buttonStyle(.plain)
             .help("Settings")
 
             Button(action: createNewNote) {
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 12))
-                    .foregroundColor(.gray.opacity(0.6))
+                topBarIcon("plus.circle")
             }
             .buttonStyle(.plain)
             .help("New Note")
 
             Button(action: pasteImageFromClipboard) {
-                Image(systemName: "doc.on.clipboard")
-                    .font(.system(size: 12))
-                    .foregroundColor(.gray.opacity(0.6))
+                topBarIcon("doc.on.clipboard")
             }
             .buttonStyle(.plain)
             .help("Paste image from clipboard")
@@ -341,12 +341,12 @@ struct ContentView: View {
             Menu {
                 windowActionsMenu
             } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 12))
+                topBarIcon("ellipsis.circle")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .tint(.gray.opacity(0.6))
+            .tint(topBarIconColor)
+            .buttonStyle(.plain)
             .fixedSize()
             .help("Window actions")
         }
@@ -373,6 +373,28 @@ struct ContentView: View {
     @ViewBuilder
     private var backgroundColorMenu: some View {
         Menu {
+            if isReadingAid {
+                Button {
+                    backgroundColorName = "clear"
+                } label: {
+                    if backgroundColorName == "clear" {
+                        Label("🔲 Clear", systemImage: "checkmark")
+                    } else {
+                        Text("🔲 Clear")
+                    }
+                }
+            }
+
+            Button {
+                backgroundColorName = "white"
+            } label: {
+                if backgroundColorName == "white" {
+                    Label("⚪️ White", systemImage: "checkmark")
+                } else {
+                    Text("⚪️ White")
+                }
+            }
+
             Button {
                 backgroundColorName = "yellow"
             } label: {
@@ -617,7 +639,8 @@ struct ContentView: View {
             stayOnThisScreen: $stayOnThisScreen,
             dynamicSizingEnabled: $dynamicSizingEnabled,
             noteOpacity: $noteOpacity,
-            disappearOnHover: $disappearOnHover
+            disappearOnHover: $disappearOnHover,
+            isReadingAid: isReadingAid
         )
     }
 
@@ -1080,6 +1103,10 @@ struct ContentView: View {
 
     var currentBackgroundColor: Color {
         switch backgroundColorName {
+        case "clear":
+            return Color.clear
+        case "white":
+            return Color.white
         case "yellow":
             return Color(red: 1.0, green: 0.98, blue: 0.7)
         case "pink":
@@ -1095,6 +1122,48 @@ struct ContentView: View {
         default:
             return Color(red: 1.0, green: 0.98, blue: 0.7)
         }
+    }
+
+    private var isClearReadingAid: Bool {
+        isReadingAid && backgroundColorName == "clear"
+    }
+
+    private var topBarIconColor: Color {
+        Color.gray.opacity(0.6)
+    }
+
+    private var topBarIconNSColor: NSColor {
+        NSColor.gray.withAlphaComponent(0.6)
+    }
+
+    @ViewBuilder
+    private func topBarIcon(_ systemName: String) -> some View {
+        if let image = tintedSymbolImage(systemName) {
+            Image(nsImage: image)
+        } else {
+            Image(systemName: systemName)
+                .font(.system(size: 12))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(topBarIconColor)
+        }
+    }
+
+    private func tintedSymbolImage(_ systemName: String) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+        guard let baseImage = NSImage(systemSymbolName: systemName, accessibilityDescription: nil),
+              let configuredImage = baseImage.withSymbolConfiguration(config) else {
+            return nil
+        }
+        let size = configuredImage.size
+        let tintedImage = NSImage(size: size)
+        tintedImage.lockFocus()
+        let rect = NSRect(origin: .zero, size: size)
+        topBarIconNSColor.set()
+        configuredImage.isTemplate = true
+        configuredImage.draw(in: rect, from: .zero, operation: .sourceIn, fraction: 1.0)
+        tintedImage.unlockFocus()
+        tintedImage.isTemplate = false
+        return tintedImage
     }
 }
 
@@ -1236,16 +1305,23 @@ struct SettingsView: View {
 
     let noteId: UUID
     let appDelegate: AppDelegate
+    let isReadingAid: Bool
 
-
-    let colorOptions: [(name: String, color: Color, display: String)] = [
-        ("yellow", Color(red: 1.0, green: 0.98, blue: 0.7), "Yellow"),
-        ("pink", Color(red: 1.0, green: 0.85, blue: 0.9), "Pink"),
-        ("blue", Color(red: 0.85, green: 0.95, blue: 1.0), "Blue"),
-        ("green", Color(red: 0.88, green: 0.98, blue: 0.88), "Green"),
-        ("purple", Color(red: 0.93, green: 0.88, blue: 0.98), "Purple"),
-        ("orange", Color(red: 1.0, green: 0.92, blue: 0.8), "Orange")
-    ]
+    private var colorOptions: [(name: String, color: Color, display: String)] {
+        var options: [(name: String, color: Color, display: String)] = [
+            ("white", Color.white, "White"),
+            ("yellow", Color(red: 1.0, green: 0.98, blue: 0.7), "Yellow"),
+            ("pink", Color(red: 1.0, green: 0.85, blue: 0.9), "Pink"),
+            ("blue", Color(red: 0.85, green: 0.95, blue: 1.0), "Blue"),
+            ("green", Color(red: 0.88, green: 0.98, blue: 0.88), "Green"),
+            ("purple", Color(red: 0.93, green: 0.88, blue: 0.98), "Purple"),
+            ("orange", Color(red: 1.0, green: 0.92, blue: 0.8), "Orange")
+        ]
+        if isReadingAid {
+            options.insert(("clear", Color.clear, "Clear"), at: 0)
+        }
+        return options
+    }
 
     var body: some View {
         VStack(spacing: 0) {
