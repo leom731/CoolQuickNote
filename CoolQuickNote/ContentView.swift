@@ -45,6 +45,7 @@ struct ContentView: View {
     @AppStorage var noteOpacity: Double
     @AppStorage var disappearOnHover: Bool
     @AppStorage var isReadingAid: Bool
+    @AppStorage var imageScale: Double
 
     @State private var windowSize: CGSize = .zero
     @State private var effectiveFontSize: Double = 11.0
@@ -76,6 +77,7 @@ struct ContentView: View {
         _noteOpacity = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_opacity")
         _disappearOnHover = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_disappearOnHover")
         _isReadingAid = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_readingAid")
+        _imageScale = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_imageScale")
     }
 
     private func formatCurrentDateTime() -> String {
@@ -126,6 +128,14 @@ struct ContentView: View {
         "note_\(noteId.uuidString)_imageData"
     }
 
+    private func calculateImageHeight(for image: NSImage, availableWidth: CGFloat) -> CGFloat {
+        let imageSize = image.size
+        guard imageSize.width > 0 && imageSize.height > 0 else { return 100 }
+        let scaledWidth = availableWidth * imageScale
+        let aspectRatio = imageSize.height / imageSize.width
+        return scaledWidth * aspectRatio
+    }
+
     private var shouldHideOnHover: Bool {
         disappearOnHover && isHovering && !isCommandKeyPressed && !isShowingReadingAidPrompt
     }
@@ -141,24 +151,51 @@ struct ContentView: View {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     if !isReadingAid, let image = pastedImage {
-                        ZStack(alignment: .topTrailing) {
-                            Image(nsImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxWidth: .infinity)
-                                .clipped()
-                                .padding(12)
+                        VStack(spacing: 4) {
+                            ZStack(alignment: .topTrailing) {
+                                GeometryReader { imageGeometry in
+                                    let availableWidth = imageGeometry.size.width - 24
+                                    let scaledWidth = availableWidth * imageScale
 
-                            Button(action: clearPastedImage) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.gray.opacity(0.7))
-                                    .padding(8)
-                                    .background(.ultraThinMaterial, in: Capsule())
+                                    HStack {
+                                        Spacer()
+                                        Image(nsImage: image)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: scaledWidth)
+                                            .clipped()
+                                        Spacer()
+                                    }
+                                }
+                                .frame(height: calculateImageHeight(for: image, availableWidth: geometry.size.width - 24))
+                                .padding(.horizontal, 12)
+                                .padding(.top, 12)
+
+                                Button(action: clearPastedImage) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.gray.opacity(0.7))
+                                        .padding(8)
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(8)
+                                .help("Remove image")
                             }
-                            .buttonStyle(.plain)
-                            .padding(8)
-                            .help("Remove image")
+
+                            HStack(spacing: 8) {
+                                Image(systemName: "photo.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                Slider(value: $imageScale, in: 0.2...1.0, step: 0.05)
+                                    .frame(maxWidth: 120)
+                                Text("\(Int(imageScale * 100))%")
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 35, alignment: .trailing)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 8)
                         }
                     }
 
@@ -947,6 +984,7 @@ struct ContentView: View {
     private func clearPastedImage() {
         pastedImage = nil
         pastedImageData = nil
+        imageScale = 1.0
         UserDefaults.standard.removeObject(forKey: imageStorageKey)
     }
 
