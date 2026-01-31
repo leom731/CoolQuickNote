@@ -140,7 +140,7 @@ struct ContentView: View {
 
             GeometryReader { geometry in
                 VStack(spacing: 0) {
-                    if let image = pastedImage {
+                    if !isReadingAid, let image = pastedImage {
                         ZStack(alignment: .topTrailing) {
                             Image(nsImage: image)
                                 .resizable()
@@ -165,6 +165,7 @@ struct ContentView: View {
                     NoteTextEditor(
                         text: $noteContent,
                         isFocused: $isTextEditorFocused,
+                        isEditable: !isReadingAid,
                         font: currentNSFont,
                         textColor: currentFontNSColor,
                         tabSpaces: "    "
@@ -212,21 +213,23 @@ struct ContentView: View {
         )
         .overlay(readingAidPromptOverlay)
         .contextMenu {
-            Button(action: pasteImageFromClipboard) {
-                Label("Paste Image", systemImage: "doc.on.clipboard")
+            if !isReadingAid {
+                Button(action: pasteImageFromClipboard) {
+                    Label("Paste Image", systemImage: "doc.on.clipboard")
+                }
+                Button(action: insertCurrentDateTime) {
+                    Label("Insert Date & Time", systemImage: "calendar.badge.clock")
+                }
+                Button(action: insertCurrentDateOnly) {
+                    Label("Insert Date", systemImage: "calendar")
+                }
+                .keyboardShortcut("d", modifiers: .command)
+                Button(action: insertCurrentTimeOnly) {
+                    Label("Insert Time", systemImage: "clock")
+                }
+                .keyboardShortcut("t", modifiers: .command)
+                Divider()
             }
-            Button(action: insertCurrentDateTime) {
-                Label("Insert Date & Time", systemImage: "calendar.badge.clock")
-            }
-            Button(action: insertCurrentDateOnly) {
-                Label("Insert Date", systemImage: "calendar")
-            }
-            .keyboardShortcut("d", modifiers: .command)
-            Button(action: insertCurrentTimeOnly) {
-                Label("Insert Time", systemImage: "clock")
-            }
-            .keyboardShortcut("t", modifiers: .command)
-            Divider()
             backgroundColorMenu
             opacityMenu
             Divider()
@@ -244,10 +247,14 @@ struct ContentView: View {
         }
         .background(WindowAccessor(window: $currentWindow))
         .onAppear {
-            loadStoredImage()
+            if !isReadingAid {
+                loadStoredImage()
+            }
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                isTextEditorFocused = true
+                if !isReadingAid {
+                    isTextEditorFocused = true
+                }
             }
 
             applyWindowChrome()
@@ -256,9 +263,11 @@ struct ContentView: View {
             applyWindowChrome()
         }
         .onPasteCommand(of: [.image, .png, .jpeg, .tiff]) { providers in
+            guard !isReadingAid else { return }
             handleImagePaste(from: providers)
         }
         .onReceive(NotificationCenter.default.publisher(for: .quickNotePasteImage)) { notification in
+            guard !isReadingAid else { return }
             guard let targetId = notification.userInfo?["noteId"] as? UUID else { return }
             guard targetId == noteId else { return }
             pasteImageFromClipboard()
@@ -324,17 +333,19 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .help("Settings")
 
-            Button(action: createNewNote) {
-                topBarIcon("plus.circle")
-            }
-            .buttonStyle(.plain)
-            .help("New Note")
+            if !isReadingAid {
+                Button(action: createNewNote) {
+                    topBarIcon("plus.circle")
+                }
+                .buttonStyle(.plain)
+                .help("New Note")
 
-            Button(action: pasteImageFromClipboard) {
-                topBarIcon("doc.on.clipboard")
+                Button(action: pasteImageFromClipboard) {
+                    topBarIcon("doc.on.clipboard")
+                }
+                .buttonStyle(.plain)
+                .help("Paste image from clipboard")
             }
-            .buttonStyle(.plain)
-            .help("Paste image from clipboard")
 
             Spacer(minLength: 0)
 
@@ -361,8 +372,10 @@ struct ContentView: View {
             Label("Settings", systemImage: "gear")
         }
 
-        Button(action: createNewNote) {
-            Label("New Note", systemImage: "plus.circle")
+        if !isReadingAid {
+            Button(action: createNewNote) {
+                Label("New Note", systemImage: "plus.circle")
+            }
         }
 
         Button(action: createReadingAidNote) {
@@ -655,7 +668,11 @@ struct ContentView: View {
     }
 
     private func closeNote() {
-        showCloseConfirmation = true
+        if isReadingAid {
+            appDelegate.closeNote(id: noteId)
+        } else {
+            showCloseConfirmation = true
+        }
     }
 
     private func saveToNotesApp() {
@@ -1170,6 +1187,7 @@ struct ContentView: View {
 struct NoteTextEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
+    let isEditable: Bool
     let font: NSFont
     let textColor: NSColor
     let tabSpaces: String
@@ -1181,14 +1199,24 @@ struct NoteTextEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let textView = TabInsertionTextView()
         textView.delegate = context.coordinator
-        textView.isEditable = true
-        textView.isSelectable = true
+        textView.isEditable = isEditable
+        textView.isSelectable = isEditable
         textView.isRichText = false
-        textView.allowsUndo = true
+        textView.allowsUndo = isEditable
         textView.drawsBackground = false
         textView.backgroundColor = .clear
         textView.font = font
         textView.textColor = textColor
+
+        if textView.isEditable != isEditable {
+            textView.isEditable = isEditable
+        }
+        if textView.isSelectable != isEditable {
+            textView.isSelectable = isEditable
+        }
+        if textView.allowsUndo != isEditable {
+            textView.allowsUndo = isEditable
+        }
         textView.string = text
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineFragmentPadding = 0
@@ -1219,6 +1247,16 @@ struct NoteTextEditor: NSViewRepresentable {
 
         textView.font = font
         textView.textColor = textColor
+
+        if textView.isEditable != isEditable {
+            textView.isEditable = isEditable
+        }
+        if textView.isSelectable != isEditable {
+            textView.isSelectable = isEditable
+        }
+        if textView.allowsUndo != isEditable {
+            textView.allowsUndo = isEditable
+        }
 
         if textView.tabSpaces != tabSpaces {
             textView.tabSpaces = tabSpaces
@@ -1271,6 +1309,9 @@ final class TabInsertionTextView: NSTextView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if !isEditable {
+            return super.performKeyEquivalent(with: event)
+        }
         // Handle Command+A for Select All
         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "a" {
             selectAll(nil)
