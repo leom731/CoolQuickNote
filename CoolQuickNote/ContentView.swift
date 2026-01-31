@@ -401,6 +401,8 @@ struct ContentView: View {
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 4)
+        .opacity(isHovering ? 1.0 : 0.0)
+        .animation(.easeInOut(duration: 0.2), value: isHovering)
     }
 
     @ViewBuilder
@@ -1184,41 +1186,18 @@ struct ContentView: View {
     }
 
     private var topBarIconColor: Color {
-        Color.gray.opacity(0.6)
+        Color(white: 0.4)
     }
 
     private var topBarIconNSColor: NSColor {
-        NSColor.gray.withAlphaComponent(0.6)
+        NSColor(white: 0.4, alpha: 1.0)
     }
 
     @ViewBuilder
     private func topBarIcon(_ systemName: String) -> some View {
-        if let image = tintedSymbolImage(systemName) {
-            Image(nsImage: image)
-        } else {
-            Image(systemName: systemName)
-                .font(.system(size: 12))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(topBarIconColor)
-        }
-    }
-
-    private func tintedSymbolImage(_ systemName: String) -> NSImage? {
-        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
-        guard let baseImage = NSImage(systemSymbolName: systemName, accessibilityDescription: nil),
-              let configuredImage = baseImage.withSymbolConfiguration(config) else {
-            return nil
-        }
-        let size = configuredImage.size
-        let tintedImage = NSImage(size: size)
-        tintedImage.lockFocus()
-        let rect = NSRect(origin: .zero, size: size)
-        topBarIconNSColor.set()
-        configuredImage.isTemplate = true
-        configuredImage.draw(in: rect, from: .zero, operation: .sourceIn, fraction: 1.0)
-        tintedImage.unlockFocus()
-        tintedImage.isTemplate = false
-        return tintedImage
+        Image(systemName: systemName)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundColor(topBarIconColor)
     }
 }
 
