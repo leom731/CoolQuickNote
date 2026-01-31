@@ -249,6 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var statusItem: NSStatusItem?
     private var spaceObserver: NSObjectProtocol?
     private var frontAppObserver: NSObjectProtocol?
+    private var readingAidScrollMonitor: Any?
     @Published var noteCount: Int = 0
     @Published var activeNoteId: UUID?
     @Published var areNotesHidden: Bool = false
@@ -295,6 +296,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         ) { [weak self] _ in
             self?.refreshNoteVisibilityForActiveSpace()
         }
+
+        setupReadingAidScrollMonitor()
     }
 
     private func setupMenuBarIcon() {
@@ -364,6 +367,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
 
         return NSImage(pasteboard: pasteboard) != nil
+    }
+
+
+    private func setupReadingAidScrollMonitor() {
+        guard readingAidScrollMonitor == nil else { return }
+        readingAidScrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self else { return event }
+            guard let noteId = self.resolveActiveNoteId() else { return event }
+            guard self.isReadingAidNote(noteId) else { return event }
+            guard let panel = self.notePanels[noteId] else { return event }
+
+            let deltaY = event.scrollingDeltaY
+            guard deltaY != 0 else { return event }
+
+            let directionMultiplier: CGFloat = event.isDirectionInvertedFromDevice ? -1.0 : 1.0
+            let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1.0 : 12.0
+            var frame = panel.frame
+            frame.origin.y += deltaY * directionMultiplier * multiplier
+
+            if let screen = panel.screen ?? NSScreen.main {
+                let visibleFrame = screen.visibleFrame
+                let minY = visibleFrame.minY
+                let maxY = visibleFrame.maxY - frame.height
+                frame.origin.y = min(max(frame.origin.y, minY), maxY)
+            }
+
+            panel.setFrameOrigin(frame.origin)
+            return nil
+        }
+    }
+
+    private func isReadingAidNote(_ noteId: UUID) -> Bool {
+        UserDefaults.standard.bool(forKey: readingAidKey(for: noteId))
     }
 
     private func resolveActiveNoteId() -> UUID? {
@@ -994,6 +1030,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let monitor = readingAidScrollMonitor {
+            NSEvent.removeMonitor(monitor)
+            readingAidScrollMonitor = nil
+        }
+
         // Save all note window positions before quitting
         for (id, panel) in notePanels {
             saveNoteWindowFrame(id: id, frame: panel.frame)
