@@ -1029,6 +1029,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return true
     }
 
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "New Note", action: #selector(createNewNote), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "New Reading Aid", action: #selector(createReadingAidNote), keyEquivalent: ""))
+        return menu
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         if let monitor = readingAidScrollMonitor {
             NSEvent.removeMonitor(monitor)
