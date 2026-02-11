@@ -698,7 +698,7 @@ struct ContentView: View {
 
     private func createNewNote() {
         appDelegate.activeNoteId = noteId
-        appDelegate.createNewNote()
+        appDelegate.createNewNoteFromNote()
     }
 
     private func createReadingAidNote() {

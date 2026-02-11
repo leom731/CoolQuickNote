@@ -421,8 +421,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         case readingAid
     }
 
+    private enum NoteCreationSource {
+        case menu
+        case note
+    }
+
     @objc func createNewNote() {
-        createNote(style: .standard)
+        createNote(style: .standard, source: .menu)
     }
 
     @objc func createReadingAidNote() {
@@ -433,7 +438,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         createNote(style: .readingAid, readingAidPreset: preset)
     }
 
-    private func createNote(style: NoteCreationStyle, readingAidPreset: ReadingAidPreset? = nil) {
+    func createNewNoteFromNote() {
+        createNote(style: .standard, source: .note)
+    }
+
+    private func createNote(
+        style: NoteCreationStyle,
+        source: NoteCreationSource = .menu,
+        readingAidPreset: ReadingAidPreset? = nil
+    ) {
         let newNoteId = UUID()
 
         var windowFrame: CGRect? = nil
@@ -448,7 +461,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         case .standard:
             let defaultSize = CGSize(width: 300, height: 300)
             let initialSize = CGSize(width: defaultSize.width * 0.75, height: defaultSize.height * 0.75)
-            targetSize = activePanel?.frame.size ?? notePanels.values.first?.frame.size ?? initialSize
+            if source == .note {
+                targetSize = activePanel?.frame.size ?? notePanels.values.first?.frame.size ?? initialSize
+            } else {
+                targetSize = initialSize
+            }
         case .readingAid:
             isReadingAid = true
             targetSize = readingAidPreset?.size ?? readingAidInitialSize(on: placementScreen)
@@ -478,7 +495,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             avoiding: existingFrames
         )
 
-        if let sourceId = activeNoteId, notePanels[sourceId] != nil {
+        if style == .standard, source == .note, let sourceId = activeNoteId, notePanels[sourceId] != nil {
             if let storedOpacity = UserDefaults.standard.object(forKey: "note_\(sourceId.uuidString)_opacity") as? Double {
                 opacity = storedOpacity
             }
