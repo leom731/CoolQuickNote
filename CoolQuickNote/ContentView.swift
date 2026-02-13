@@ -310,8 +310,10 @@ struct ContentView: View {
             pasteImageFromClipboard()
         }
         .alert("Save Note", isPresented: $showCloseConfirmation) {
-            Button("Save to Notes", action: saveToNotesApp)
-            Button("Save to Stickies", action: saveToStickiesApp)
+            Button("Save to Notes and Close") {
+                saveToNotesApp(closeAfterSave: true)
+            }
+            Button("Save to Stickies and Close", action: saveToStickiesApp)
             Button("Discard", role: .destructive, action: discardNote)
             Button("Cancel", role: .cancel) { }
         } message: {
@@ -656,6 +658,13 @@ struct ContentView: View {
         }
         .keyboardShortcut("g", modifiers: .command)
 
+        if !isReadingAid {
+            Divider()
+            Button("Save to Notes", systemImage: "note.text") {
+                saveToNotesApp(closeAfterSave: false)
+            }
+        }
+
         Divider()
 
         Button("Minimize", systemImage: "minus.square") {
@@ -714,7 +723,7 @@ struct ContentView: View {
         }
     }
 
-    private func saveToNotesApp() {
+    private func saveToNotesApp(closeAfterSave: Bool = true) {
         // Copy note content (and any pasted image) to the clipboard.
         preparePasteboardForExport()
 
@@ -783,9 +792,10 @@ struct ContentView: View {
                 return
             }
 
-            // Close the note after saving successfully
-            DispatchQueue.main.async {
-                self.appDelegate.closeNote(id: self.noteId)
+            if closeAfterSave {
+                DispatchQueue.main.async {
+                    self.appDelegate.closeNote(id: self.noteId)
+                }
             }
         } catch {
             DispatchQueue.main.async {
