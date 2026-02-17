@@ -11,6 +11,7 @@ struct NoteData: Codable, Identifiable {
     var fontColorName: String
     var backgroundColorName: String
     var stayOnThisScreen: Bool
+    var alwaysOnTop: Bool
     var dynamicSizingEnabled: Bool
     var noteOpacity: Double
     var isReadingAid: Bool
@@ -24,6 +25,7 @@ struct NoteData: Codable, Identifiable {
          fontColorName: String = "blue",
          backgroundColorName: String = "yellow",
          stayOnThisScreen: Bool = false,
+         alwaysOnTop: Bool = true,
          dynamicSizingEnabled: Bool = false,
          noteOpacity: Double = 1.0,
          isReadingAid: Bool = false,
@@ -36,6 +38,7 @@ struct NoteData: Codable, Identifiable {
         self.fontColorName = fontColorName
         self.backgroundColorName = backgroundColorName
         self.stayOnThisScreen = stayOnThisScreen
+        self.alwaysOnTop = alwaysOnTop
         self.dynamicSizingEnabled = dynamicSizingEnabled
         self.noteOpacity = noteOpacity
         self.isReadingAid = isReadingAid
@@ -68,6 +71,7 @@ extension NoteData {
         case backgroundColorName
         case stayOnThisScreen
         case alwaysOnTop
+        case alwaysOnTopEnabled
         case dynamicSizingEnabled
         case noteOpacity
         case isReadingAid
@@ -90,6 +94,7 @@ extension NoteData {
         } else {
             stayOnThisScreen = false
         }
+        alwaysOnTop = try container.decodeIfPresent(Bool.self, forKey: .alwaysOnTopEnabled) ?? true
         dynamicSizingEnabled = try container.decodeIfPresent(Bool.self, forKey: .dynamicSizingEnabled) ?? false
         noteOpacity = try container.decodeIfPresent(Double.self, forKey: .noteOpacity) ?? 1.0
         isReadingAid = try container.decodeIfPresent(Bool.self, forKey: .isReadingAid) ?? false
@@ -106,6 +111,7 @@ extension NoteData {
         try container.encode(fontColorName, forKey: .fontColorName)
         try container.encode(backgroundColorName, forKey: .backgroundColorName)
         try container.encode(stayOnThisScreen, forKey: .stayOnThisScreen)
+        try container.encode(alwaysOnTop, forKey: .alwaysOnTopEnabled)
         try container.encode(dynamicSizingEnabled, forKey: .dynamicSizingEnabled)
         try container.encode(noteOpacity, forKey: .noteOpacity)
         try container.encode(isReadingAid, forKey: .isReadingAid)
@@ -157,6 +163,9 @@ struct CoolQuickNoteApp: App {
                     appDelegate.toggleStayOnThisDesktopForActiveNote()
                 }
                 .keyboardShortcut("l", modifiers: .command)
+                Button("Always on Top") {
+                    appDelegate.toggleAlwaysOnTopForActiveNote()
+                }
                 Button("Show All Notes on All Desktops") {
                     appDelegate.disableStayOnThisScreenForAllNotes()
                 }
@@ -199,6 +208,7 @@ struct NoteSettingsSceneView: View {
     @AppStorage var fontColorName: String
     @AppStorage var backgroundColorName: String
     @AppStorage var stayOnThisScreen: Bool
+    @AppStorage var alwaysOnTop: Bool
     @AppStorage var dynamicSizingEnabled: Bool
     @AppStorage var noteOpacity: Double
     @AppStorage var disappearOnHover: Bool
@@ -215,6 +225,9 @@ struct NoteSettingsSceneView: View {
         let stayOnThisScreenKey = "note_\(noteId.uuidString)_stayOnThisScreen"
         let stayOnThisScreenDefault = appDelegate.ensureStayOnThisScreenSetting(for: noteId)
         _stayOnThisScreen = AppStorage(wrappedValue: stayOnThisScreenDefault, stayOnThisScreenKey)
+        let alwaysOnTopKey = "note_\(noteId.uuidString)_alwaysOnTopEnabled"
+        let alwaysOnTopDefault = appDelegate.ensureAlwaysOnTopSetting(for: noteId)
+        _alwaysOnTop = AppStorage(wrappedValue: alwaysOnTopDefault, alwaysOnTopKey)
         _dynamicSizingEnabled = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_dynamicSizing")
         _noteOpacity = AppStorage(wrappedValue: 1.0, "note_\(noteId.uuidString)_opacity")
         _disappearOnHover = AppStorage(wrappedValue: false, "note_\(noteId.uuidString)_disappearOnHover")
@@ -228,6 +241,7 @@ struct NoteSettingsSceneView: View {
             fontColorName: $fontColorName,
             backgroundColorName: $backgroundColorName,
             stayOnThisScreen: $stayOnThisScreen,
+            alwaysOnTop: $alwaysOnTop,
             dynamicSizingEnabled: $dynamicSizingEnabled,
             noteOpacity: $noteOpacity,
             disappearOnHover: $disappearOnHover,
@@ -638,7 +652,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Configure panel appearance and space behavior
         panel.title = "CoolQuickNote"
         let stayOnThisScreen = ensureStayOnThisScreenSetting(for: noteData.id, fallback: noteData.stayOnThisScreen)
-        applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen)
+        let alwaysOnTop = ensureAlwaysOnTopSetting(for: noteData.id, fallback: noteData.alwaysOnTop)
+        applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen, alwaysOnTop: alwaysOnTop)
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
@@ -773,6 +788,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         updateStayOnThisScreen(for: noteId, stayOnThisScreen: newValue)
     }
 
+    func toggleAlwaysOnTopForActiveNote() {
+        guard let noteId = resolveActiveNoteId() else { return }
+        let current = ensureAlwaysOnTopSetting(for: noteId)
+        let newValue = !current
+        UserDefaults.standard.set(newValue, forKey: alwaysOnTopEnabledKey(for: noteId))
+        updateAlwaysOnTop(for: noteId, alwaysOnTop: newValue)
+    }
+
     private func hideStandardWindowButtons(for panel: NSPanel) {
         let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
@@ -789,6 +812,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     private func alwaysOnTopKey(for noteId: UUID) -> String {
         "note_\(noteId.uuidString)_alwaysOnTop"
+    }
+
+    private func alwaysOnTopEnabledKey(for noteId: UUID) -> String {
+        "note_\(noteId.uuidString)_alwaysOnTopEnabled"
     }
 
     private func readingAidKey(for noteId: UUID) -> String {
@@ -811,10 +838,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return fallback
     }
 
-    private func applySpaceBehavior(to panel: NSPanel, stayOnThisScreen: Bool) {
-        // Always keep note windows floating on top
-        panel.isFloatingPanel = true
-        panel.level = .floating
+    func ensureAlwaysOnTopSetting(for noteId: UUID, fallback: Bool = true) -> Bool {
+        let defaults = UserDefaults.standard
+        let key = alwaysOnTopEnabledKey(for: noteId)
+        if defaults.object(forKey: key) != nil {
+            return defaults.bool(forKey: key)
+        }
+        defaults.set(fallback, forKey: key)
+        return fallback
+    }
+
+    private func applySpaceBehavior(to panel: NSPanel, stayOnThisScreen: Bool, alwaysOnTop: Bool) {
+        panel.isFloatingPanel = alwaysOnTop
+        panel.level = alwaysOnTop ? .floating : .normal
 
         if stayOnThisScreen {
             panel.collectionBehavior = [.stationary, .fullScreenAuxiliary]
@@ -825,7 +861,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func updateStayOnThisScreen(for noteId: UUID, stayOnThisScreen: Bool) {
         guard let panel = notePanels[noteId] else { return }
-        applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen)
+        let alwaysOnTop = ensureAlwaysOnTopSetting(for: noteId)
+        applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen, alwaysOnTop: alwaysOnTop)
 
         if stayOnThisScreen {
             if let spaceID = getCurrentSpaceIdentifier(for: panel) {
@@ -839,11 +876,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         saveNotes()
     }
 
+    func updateAlwaysOnTop(for noteId: UUID, alwaysOnTop: Bool) {
+        guard let panel = notePanels[noteId] else { return }
+        let stayOnThisScreen = ensureStayOnThisScreenSetting(for: noteId)
+        applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen, alwaysOnTop: alwaysOnTop)
+        panel.orderFrontRegardless()
+        saveNotes()
+    }
+
     func disableStayOnThisScreenForAllNotes() {
         let defaults = UserDefaults.standard
         for (id, panel) in notePanels {
             defaults.set(false, forKey: stayOnThisScreenKey(for: id))
-            applySpaceBehavior(to: panel, stayOnThisScreen: false)
+            let alwaysOnTop = ensureAlwaysOnTopSetting(for: id)
+            applySpaceBehavior(to: panel, stayOnThisScreen: false, alwaysOnTop: alwaysOnTop)
             // Show the note on all spaces
             panel.orderFrontRegardless()
         }
@@ -884,7 +930,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         persistReadingAidPresets(presets)
     }
 
-    func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, stayOnThisScreen: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>, isReadingAid: Bool) {
+    func toggleSettingsPanel(for noteId: UUID, selectedFont: Binding<String>, fontSize: Binding<Double>, fontColorName: Binding<String>, backgroundColorName: Binding<String>, stayOnThisScreen: Binding<Bool>, alwaysOnTop: Binding<Bool>, dynamicSizingEnabled: Binding<Bool>, noteOpacity: Binding<Double>, disappearOnHover: Binding<Bool>, isReadingAid: Bool) {
         // If settings panel already exists for this note, close it
         if let existingPanel = settingsPanels[noteId] {
             // Remove child window relationship before closing
@@ -921,6 +967,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             fontColorName: fontColorName,
             backgroundColorName: backgroundColorName,
             stayOnThisScreen: stayOnThisScreen,
+            alwaysOnTop: alwaysOnTop,
             dynamicSizingEnabled: dynamicSizingEnabled,
             noteOpacity: noteOpacity,
             disappearOnHover: disappearOnHover,
@@ -1090,6 +1137,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 fontColorName: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_fontColor") ?? "blue",
                 backgroundColorName: UserDefaults.standard.string(forKey: "note_\(id.uuidString)_backgroundColor") ?? "yellow",
                 stayOnThisScreen: ensureStayOnThisScreenSetting(for: id),
+                alwaysOnTop: ensureAlwaysOnTopSetting(for: id),
                 dynamicSizingEnabled: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_dynamicSizing") as? Bool ?? false,
                 noteOpacity: UserDefaults.standard.object(forKey: "note_\(id.uuidString)_opacity") as? Double ?? 1.0,
                 isReadingAid: UserDefaults.standard.bool(forKey: readingAidKey(for: id)),
@@ -1208,10 +1256,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     /// Best-effort: reapply space behavior if the window is already on the target space.
     private func moveWindow(_ window: NSWindow, toSpaceIdentifier spaceID: Int) {
-        guard let panel = window as? NSPanel else { return }
+        guard let panel = window as? ActivatingPanel else { return }
         guard let currentSpaceID = getCurrentSpaceIdentifier(for: panel),
               currentSpaceID == spaceID else { return }
-        applySpaceBehavior(to: panel, stayOnThisScreen: true)
+        let alwaysOnTop = panel.noteId.map { ensureAlwaysOnTopSetting(for: $0) } ?? true
+        applySpaceBehavior(to: panel, stayOnThisScreen: true, alwaysOnTop: alwaysOnTop)
     }
 
     private func loadReadingAidPresets() -> [ReadingAidPreset] {
