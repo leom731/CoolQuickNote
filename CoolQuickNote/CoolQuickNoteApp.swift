@@ -1326,10 +1326,11 @@ private final class ActivatingPanel: NSPanel {
     }
 
     override func sendEvent(_ event: NSEvent) {
+        super.sendEvent(event)
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
             // Defer activation to the next run loop to avoid QoS inversion warnings inside AppKit.
-            DispatchQueue.main.async { [weak self] in
+            RunLoop.main.perform(inModes: [.common]) { [weak self] in
                 guard let self else { return }
                 self.makeKeyAndOrderFront(nil)  // Keep the clicked panel key in the current space without hopping spaces
                 if !self.isKeyWindow {
@@ -1342,7 +1343,6 @@ private final class ActivatingPanel: NSPanel {
         default:
             break
         }
-        super.sendEvent(event)
     }
 
     override var canBecomeKey: Bool {
