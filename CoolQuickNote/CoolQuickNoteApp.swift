@@ -256,10 +256,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     var notePanels: [UUID: NSPanel] = [:]
     var settingsPanels: [UUID: NSPanel] = [:]
     fileprivate var settingsPanelDelegates: [UUID: SettingsPanelDelegate] = [:]
+    fileprivate var notePanelDelegates: [UUID: NotePanelDelegate] = [:]
     private var tipJarPanel: NSPanel?
     private var tipJarPanelDelegate: TipJarPanelDelegate?
     private let notesKey = "savedNotes"
     private let readingAidPresetsKey = "readingAidPresets"
+    private var closingNoteIds: Set<UUID> = []
     private var statusItem: NSStatusItem?
     private var spaceObserver: NSObjectProtocol?
     private var frontAppObserver: NSObjectProtocol?
@@ -687,6 +689,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         // Set up close handler
         panel.noteId = noteData.id
+        let notePanelDelegate = NotePanelDelegate(noteId: noteData.id, appDelegate: self)
+        panel.delegate = notePanelDelegate
+        notePanelDelegates[noteData.id] = notePanelDelegate
 
         panel.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
@@ -727,15 +732,69 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func closeNote(id: UUID) {
-        if let panel = notePanels[id] {
-            // Save window frame before closing
-            saveNoteWindowFrame(id: id, frame: panel.frame)
-            panel.close()
-            notePanels.removeValue(forKey: id)
-            noteCount = notePanels.count
-            UserDefaults.standard.removeObject(forKey: "note_\(id.uuidString)_imageData")
-            saveNotes()
+        if closingNoteIds.contains(id) {
+            return
         }
+        closingNoteIds.insert(id)
+
+        let performClose = { [weak self] in
+            guard let self else { return }
+            guard let panel = self.resolveNotePanel(for: id) else {
+                self.closingNoteIds.remove(id)
+                return
+            }
+
+            panel.performClose(nil)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak panel] in
+                guard let self, let panel else {
+                    self?.closingNoteIds.remove(id)
+                    return
+                }
+                if panel.isVisible {
+                    panel.orderOut(nil)
+                    self.handleNotePanelClosed(noteId: id, panel: panel)
+                }
+            }
+        }
+
+        if Thread.isMainThread {
+            performClose()
+        } else {
+            DispatchQueue.main.async(execute: performClose)
+        }
+    }
+
+    private func resolveNotePanel(for noteId: UUID) -> NSPanel? {
+        for window in NSApp.windows {
+            if let panel = window as? ActivatingPanel, panel.noteId == noteId {
+                return panel
+            }
+        }
+
+        if let panel = notePanels[noteId] {
+            return panel
+        }
+
+        return nil
+    }
+
+    fileprivate func handleNotePanelClosed(noteId: UUID, panel: NSPanel?) {
+        if let settingsPanel = settingsPanels[noteId] {
+            settingsPanel.close()
+        }
+
+        let targetPanel = panel ?? notePanels[noteId]
+        if let panel = targetPanel {
+            saveNoteWindowFrame(id: noteId, frame: panel.frame)
+        }
+
+        notePanels.removeValue(forKey: noteId)
+        notePanelDelegates.removeValue(forKey: noteId)
+        noteCount = notePanels.count
+        UserDefaults.standard.removeObject(forKey: "note_\(noteId.uuidString)_imageData")
+        saveNotes()
+        closingNoteIds.remove(noteId)
     }
 
     // MARK: - Hide/Show All Notes
@@ -1275,6 +1334,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if let encoded = try? JSONEncoder().encode(presets) {
             UserDefaults.standard.set(encoded, forKey: readingAidPresetsKey)
         }
+    }
+}
+
+// Delegate to handle note panel close
+fileprivate class NotePanelDelegate: NSObject, NSWindowDelegate {
+    let noteId: UUID
+    weak var appDelegate: AppDelegate?
+
+    init(noteId: UUID, appDelegate: AppDelegate) {
+        self.noteId = noteId
+        self.appDelegate = appDelegate
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        appDelegate?.handleNotePanelClosed(noteId: noteId, panel: notification.object as? NSPanel)
     }
 }
 
