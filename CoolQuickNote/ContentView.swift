@@ -278,6 +278,8 @@ struct ContentView: View {
             Divider()
             readingAidPresetsMenu
             Divider()
+            recentClosedNotesMenu
+            Divider()
             noteOptionsMenu
             Divider()
             windowActionsMenu
@@ -323,6 +325,34 @@ struct ContentView: View {
         } message: {
             Text("Would you like to save this note to Notes or Stickies?")
         }
+    }
+
+    private var recentClosedNotesMenu: some View {
+        Menu("Reopen Recently Closed") {
+            if appDelegate.recentClosedNotes.isEmpty {
+                Text("No Recently Closed Notes")
+            } else {
+                ForEach(appDelegate.recentClosedNotes.prefix(10)) { note in
+                    Button(recentClosedTitle(for: note)) {
+                        appDelegate.reopenRecentlyClosedNote(noteId: note.id)
+                    }
+                }
+            }
+        }
+    }
+
+    private func recentClosedTitle(for note: RecentClosedNote) -> String {
+        let lines = note.noteData.content.components(separatedBy: .newlines)
+        let firstLine = lines.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? ""
+        let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return "Untitled Note"
+        }
+        if trimmed.count > 40 {
+            let prefix = trimmed.prefix(40)
+            return "\(prefix)..."
+        }
+        return trimmed
     }
 
     @ViewBuilder

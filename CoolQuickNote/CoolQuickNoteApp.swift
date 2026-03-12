@@ -61,6 +61,14 @@ struct ReadingAidPreset: Codable, Identifiable, Equatable {
     }
 }
 
+struct RecentClosedNote: Codable, Identifiable {
+    let id: UUID
+    var noteData: NoteData
+    var disappearOnHover: Bool
+    var imageScale: Double
+    var imageData: Data?
+}
+
 extension NoteData {
     private enum CodingKeys: String, CodingKey {
         case id
@@ -261,6 +269,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var tipJarPanelDelegate: TipJarPanelDelegate?
     private let notesKey = "savedNotes"
     private let readingAidPresetsKey = "readingAidPresets"
+    private let recentClosedNotesKey = "recentClosedNotes"
+    private let maxRecentClosedNotes = 10
     private var closingNoteIds: Set<UUID> = []
     private var statusItem: NSStatusItem?
     private var spaceObserver: NSObjectProtocol?
@@ -270,11 +280,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published var activeNoteId: UUID?
     @Published var areNotesHidden: Bool = false
     @Published var readingAidPresets: [ReadingAidPreset] = []
+    @Published var recentClosedNotes: [RecentClosedNote] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Set up menu bar icon
-        setupMenuBarIcon()
-
         // Set up notification observer to track active note
         NotificationCenter.default.addObserver(
             self,
@@ -283,8 +291,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             object: nil
         )
 
-        // Load existing notes or create a default one
         readingAidPresets = loadReadingAidPresets()
+        recentClosedNotes = loadRecentClosedNotes()
+
+        // Set up menu bar icon
+        setupMenuBarIcon()
+
+        // Load existing notes or create a default one
         let savedNotes = loadNotes()
 
         if savedNotes.isEmpty {
@@ -332,6 +345,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         menu.addItem(NSMenuItem(title: "New Note", action: #selector(createNewNote), keyEquivalent: "n"))
         menu.addItem(NSMenuItem(title: "New Reading Aid", action: #selector(createReadingAidNote), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+
+        let recentMenu = NSMenu()
+        if recentClosedNotes.isEmpty {
+            let emptyItem = NSMenuItem(title: "No Recently Closed Notes", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            recentMenu.addItem(emptyItem)
+        } else {
+            for note in recentClosedNotes {
+                let title = titleForRecentClosedNote(note)
+                let item = NSMenuItem(title: title, action: #selector(reopenRecentClosedNoteAction(_:)), keyEquivalent: "")
+                item.representedObject = note.id
+                recentMenu.addItem(item)
+            }
+        }
+
+        let recentItem = NSMenuItem(title: "Reopen Recently Closed", action: nil, keyEquivalent: "")
+        recentItem.submenu = recentMenu
+        menu.addItem(recentItem)
         menu.addItem(NSMenuItem.separator())
 
         let hideShowTitle = areNotesHidden ? "Show All Notes" : "Hide All Notes"
@@ -792,7 +824,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         notePanels.removeValue(forKey: noteId)
         notePanelDelegates.removeValue(forKey: noteId)
         noteCount = notePanels.count
-        UserDefaults.standard.removeObject(forKey: "note_\(noteId.uuidString)_imageData")
+        let storedAsRecent = recordRecentlyClosedNote(noteId: noteId, panel: targetPanel)
+        if !storedAsRecent {
+            UserDefaults.standard.removeObject(forKey: imageStorageKey(for: noteId))
+        }
         saveNotes()
         closingNoteIds.remove(noteId)
     }
@@ -1333,6 +1368,157 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private func persistReadingAidPresets(_ presets: [ReadingAidPreset]) {
         if let encoded = try? JSONEncoder().encode(presets) {
             UserDefaults.standard.set(encoded, forKey: readingAidPresetsKey)
+        }
+    }
+
+    private func loadRecentClosedNotes() -> [RecentClosedNote] {
+        guard let data = UserDefaults.standard.data(forKey: recentClosedNotesKey),
+              let notes = try? JSONDecoder().decode([RecentClosedNote].self, from: data) else {
+            return []
+        }
+        return notes.filter { !$0.noteData.isReadingAid }
+    }
+
+    private func persistRecentClosedNotes() {
+        if let encoded = try? JSONEncoder().encode(recentClosedNotes) {
+            UserDefaults.standard.set(encoded, forKey: recentClosedNotesKey)
+        }
+    }
+
+    private func titleForRecentClosedNote(_ note: RecentClosedNote) -> String {
+        let lines = note.noteData.content.components(separatedBy: .newlines)
+        let firstLine = lines.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? ""
+        let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return "Untitled Note"
+        }
+        if trimmed.count > 40 {
+            let prefix = trimmed.prefix(40)
+            return "\(prefix)..."
+        }
+        return trimmed
+    }
+
+    private func imageStorageKey(for noteId: UUID) -> String {
+        "note_\(noteId.uuidString)_imageData"
+    }
+
+    @discardableResult
+    private func recordRecentlyClosedNote(noteId: UUID, panel: NSPanel?) -> Bool {
+        guard let snapshot = makeRecentClosedSnapshot(noteId: noteId, panel: panel) else {
+            return false
+        }
+
+        recentClosedNotes.removeAll { $0.id == noteId }
+        recentClosedNotes.insert(snapshot, at: 0)
+
+        var removed: [RecentClosedNote] = []
+        if recentClosedNotes.count > maxRecentClosedNotes {
+            removed = Array(recentClosedNotes.suffix(from: maxRecentClosedNotes))
+            recentClosedNotes = Array(recentClosedNotes.prefix(maxRecentClosedNotes))
+        }
+
+        persistRecentClosedNotes()
+        updateMenuBarMenu()
+
+        for note in removed {
+            UserDefaults.standard.removeObject(forKey: imageStorageKey(for: note.id))
+        }
+
+        return true
+    }
+
+    private func makeRecentClosedSnapshot(noteId: UUID, panel: NSPanel?) -> RecentClosedNote? {
+        guard !isReadingAidNote(noteId) else { return nil }
+
+        let defaults = UserDefaults.standard
+        let content = defaults.string(forKey: "note_\(noteId.uuidString)_content") ?? ""
+        let selectedFont = defaults.string(forKey: "note_\(noteId.uuidString)_font") ?? "regular"
+        let storedFontSize = defaults.double(forKey: "note_\(noteId.uuidString)_fontSize")
+        let fontSize = storedFontSize != 0 ? storedFontSize : 11
+        let fontColorName = defaults.string(forKey: "note_\(noteId.uuidString)_fontColor") ?? "blue"
+        let backgroundColorName = defaults.string(forKey: "note_\(noteId.uuidString)_backgroundColor") ?? "yellow"
+        let stayOnThisScreen = ensureStayOnThisScreenSetting(for: noteId)
+        let alwaysOnTop = ensureAlwaysOnTopSetting(for: noteId)
+        let dynamicSizingEnabled = defaults.object(forKey: "note_\(noteId.uuidString)_dynamicSizing") as? Bool ?? false
+        let noteOpacity = defaults.object(forKey: "note_\(noteId.uuidString)_opacity") as? Double ?? 1.0
+        let disappearOnHover = defaults.object(forKey: "note_\(noteId.uuidString)_disappearOnHover") as? Bool ?? false
+        let imageScale = defaults.object(forKey: "note_\(noteId.uuidString)_imageScale") as? Double ?? 1.0
+        let imageData = defaults.data(forKey: imageStorageKey(for: noteId))
+
+        let savedSpaceIdentifier: Int?
+        if stayOnThisScreen, let panel = panel {
+            savedSpaceIdentifier = getCurrentSpaceIdentifier(for: panel)
+        } else {
+            savedSpaceIdentifier = loadNotes().first(where: { $0.id == noteId })?.savedSpaceIdentifier
+        }
+
+        let noteData = NoteData(
+            id: noteId,
+            content: content,
+            selectedFont: selectedFont,
+            fontSize: fontSize,
+            fontColorName: fontColorName,
+            backgroundColorName: backgroundColorName,
+            stayOnThisScreen: stayOnThisScreen,
+            alwaysOnTop: alwaysOnTop,
+            dynamicSizingEnabled: dynamicSizingEnabled,
+            noteOpacity: noteOpacity,
+            isReadingAid: false,
+            windowFrame: panel?.frame,
+            savedSpaceIdentifier: savedSpaceIdentifier
+        )
+
+        return RecentClosedNote(
+            id: noteId,
+            noteData: noteData,
+            disappearOnHover: disappearOnHover,
+            imageScale: imageScale,
+            imageData: imageData
+        )
+    }
+
+    @objc private func reopenRecentClosedNoteAction(_ sender: NSMenuItem) {
+        guard let noteId = sender.representedObject as? UUID else { return }
+        reopenRecentlyClosedNote(noteId: noteId)
+    }
+
+    func reopenRecentlyClosedNote(noteId: UUID) {
+        if let panel = notePanels[noteId] {
+            panel.orderFrontRegardless()
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        guard let index = recentClosedNotes.firstIndex(where: { $0.id == noteId }) else { return }
+        let snapshot = recentClosedNotes.remove(at: index)
+        persistRecentClosedNotes()
+        updateMenuBarMenu()
+
+        applyRecentClosedSnapshot(snapshot)
+        createNotePanel(with: snapshot.noteData)
+        saveNotes()
+    }
+
+    private func applyRecentClosedSnapshot(_ snapshot: RecentClosedNote) {
+        let defaults = UserDefaults.standard
+        let noteId = snapshot.id
+        let noteData = snapshot.noteData
+
+        defaults.set(noteData.content, forKey: "note_\(noteId.uuidString)_content")
+        defaults.set(noteData.selectedFont, forKey: "note_\(noteId.uuidString)_font")
+        defaults.set(noteData.fontSize, forKey: "note_\(noteId.uuidString)_fontSize")
+        defaults.set(noteData.fontColorName, forKey: "note_\(noteId.uuidString)_fontColor")
+        defaults.set(noteData.backgroundColorName, forKey: "note_\(noteId.uuidString)_backgroundColor")
+        defaults.set(noteData.stayOnThisScreen, forKey: stayOnThisScreenKey(for: noteId))
+        defaults.set(noteData.alwaysOnTop, forKey: alwaysOnTopEnabledKey(for: noteId))
+        defaults.set(noteData.dynamicSizingEnabled, forKey: "note_\(noteId.uuidString)_dynamicSizing")
+        defaults.set(noteData.noteOpacity, forKey: "note_\(noteId.uuidString)_opacity")
+        defaults.set(snapshot.disappearOnHover, forKey: "note_\(noteId.uuidString)_disappearOnHover")
+        defaults.set(snapshot.imageScale, forKey: "note_\(noteId.uuidString)_imageScale")
+        defaults.set(false, forKey: readingAidKey(for: noteId))
+        if let imageData = snapshot.imageData {
+            defaults.set(imageData, forKey: imageStorageKey(for: noteId))
         }
     }
 }
