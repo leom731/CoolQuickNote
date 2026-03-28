@@ -279,6 +279,7 @@ struct ContentView: View {
             readingAidPresetsMenu
             Divider()
             recentClosedNotesMenu
+            recentClosedReadingAidsMenu
             Divider()
             noteOptionsMenu
             Divider()
@@ -341,6 +342,20 @@ struct ContentView: View {
         }
     }
 
+    private var recentClosedReadingAidsMenu: some View {
+        Menu("Reopen Recently Closed Reading Aids") {
+            if appDelegate.recentClosedReadingAids.isEmpty {
+                Text("No Recently Closed Reading Aids")
+            } else {
+                ForEach(appDelegate.recentClosedReadingAids.prefix(10)) { note in
+                    Button(recentClosedReadingAidTitle(for: note)) {
+                        appDelegate.reopenRecentlyClosedReadingAid(noteId: note.id)
+                    }
+                }
+            }
+        }
+    }
+
     private func recentClosedTitle(for note: RecentClosedNote) -> String {
         let lines = note.noteData.content.components(separatedBy: .newlines)
         let firstLine = lines.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? ""
@@ -353,6 +368,14 @@ struct ContentView: View {
             return "\(prefix)..."
         }
         return trimmed
+    }
+
+    private func recentClosedReadingAidTitle(for note: RecentClosedNote) -> String {
+        let label = note.noteData.backgroundColorName.capitalized
+        guard let size = note.noteData.windowFrame?.size else {
+            return "\(label) Reading Aid"
+        }
+        return "\(label) Reading Aid (\(Int(size.width))x\(Int(size.height)))"
     }
 
     @ViewBuilder
