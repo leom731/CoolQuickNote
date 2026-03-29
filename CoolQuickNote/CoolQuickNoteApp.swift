@@ -364,7 +364,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             }
         }
 
-        let recentItem = NSMenuItem(title: "Reopen Recently Closed", action: nil, keyEquivalent: "")
+        let recentItem = NSMenuItem(title: "Reopen Recently Closed Notes", action: nil, keyEquivalent: "")
         recentItem.submenu = recentMenu
         menu.addItem(recentItem)
 

@@ -329,7 +329,7 @@ struct ContentView: View {
     }
 
     private var recentClosedNotesMenu: some View {
-        Menu("Reopen Recently Closed") {
+        Menu("Reopen Recently Closed Notes") {
             if appDelegate.recentClosedNotes.isEmpty {
                 Text("No Recently Closed Notes")
             } else {
