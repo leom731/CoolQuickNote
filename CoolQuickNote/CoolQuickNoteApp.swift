@@ -703,6 +703,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             backing: .buffered,
             defer: false
         )
+        panel.preventEscapeKeyClose = true
 
         // Configure panel appearance and space behavior
         panel.title = "CoolQuickNote"
@@ -1662,6 +1663,7 @@ fileprivate class TipJarPanelDelegate: NSObject, NSWindowDelegate {
 // Custom panel class copied from CoolClockPresence for full screen compatibility
 private final class ActivatingPanel: NSPanel {
     var noteId: UUID?
+    var preventEscapeKeyClose = false
     private var trackingArea: NSTrackingArea?
 
     override func awakeFromNib() {
@@ -1673,6 +1675,13 @@ private final class ActivatingPanel: NSPanel {
     }
 
     override func sendEvent(_ event: NSEvent) {
+        if preventEscapeKeyClose,
+           event.type == .keyDown,
+           event.keyCode == 53,
+           event.modifierFlags.intersection([.command, .option, .control, .shift, .function]).isEmpty {
+            return
+        }
+
         super.sendEvent(event)
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
