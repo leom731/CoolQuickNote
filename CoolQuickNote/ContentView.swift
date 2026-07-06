@@ -924,7 +924,9 @@ struct ContentView: View {
     }
 
     private func discardNote() {
-        appDelegate.closeNote(id: noteId)
+        DispatchQueue.main.async {
+            appDelegate.closeNote(id: noteId)
+        }
     }
 
     private func saveCurrentReadingAid() {

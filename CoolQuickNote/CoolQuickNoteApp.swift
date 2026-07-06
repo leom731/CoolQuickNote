@@ -786,36 +786,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func closeNote(id: UUID) {
-        if closingNoteIds.contains(id) {
-            return
-        }
-        closingNoteIds.insert(id)
-
-        let performClose = { [weak self] in
+        let closePanel = { [weak self] in
             guard let self else { return }
             guard let panel = self.resolveNotePanel(for: id) else {
                 self.closingNoteIds.remove(id)
                 return
             }
 
-            panel.performClose(nil)
+            self.closingNoteIds.insert(id)
+            panel.close()
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak panel] in
                 guard let self, let panel else {
                     self?.closingNoteIds.remove(id)
                     return
                 }
+                guard self.notePanels[id] != nil else {
+                    self.closingNoteIds.remove(id)
+                    return
+                }
                 if panel.isVisible {
                     panel.orderOut(nil)
-                    self.handleNotePanelClosed(noteId: id, panel: panel)
                 }
+                self.handleNotePanelClosed(noteId: id, panel: panel)
             }
         }
 
         if Thread.isMainThread {
-            performClose()
+            closePanel()
         } else {
-            DispatchQueue.main.async(execute: performClose)
+            DispatchQueue.main.async(execute: closePanel)
         }
     }
 
