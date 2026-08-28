@@ -519,7 +519,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         let newNoteId = UUID()
 
         var windowFrame: CGRect? = nil
-        var opacity: Double = 1.0
+        var opacity: Double = 0.8
         var backgroundColor = "yellow"
         var isReadingAid = false
 
@@ -565,9 +565,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         )
 
         if style == .standard, source == .note, let sourceId = activeNoteId, notePanels[sourceId] != nil {
-            if let storedOpacity = UserDefaults.standard.object(forKey: "note_\(sourceId.uuidString)_opacity") as? Double {
-                opacity = storedOpacity
-            }
             if let storedBackgroundColor = UserDefaults.standard.string(forKey: "note_\(sourceId.uuidString)_backgroundColor") {
                 backgroundColor = storedBackgroundColor
             }
@@ -585,7 +582,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             opacity = 0.2
         }
 
-        // Seed defaults so the new note picks up the copied appearance immediately
+        // Seed defaults so the new note picks up its initial appearance immediately
         UserDefaults.standard.set(opacity, forKey: "note_\(newNoteId.uuidString)_opacity")
         UserDefaults.standard.set(backgroundColor, forKey: "note_\(newNoteId.uuidString)_backgroundColor")
         UserDefaults.standard.set(isReadingAid, forKey: readingAidKey(for: newNoteId))
