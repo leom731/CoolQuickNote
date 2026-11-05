@@ -785,12 +785,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func closeNote(id: UUID) {
         let closePanel = { [weak self] in
             guard let self else { return }
+            guard !self.closingNoteIds.contains(id) else { return }
+            self.closingNoteIds.insert(id)
+
             guard let panel = self.resolveNotePanel(for: id) else {
                 self.closingNoteIds.remove(id)
                 return
             }
 
-            self.closingNoteIds.insert(id)
+            // Hiding first makes the close immediate even if AppKit delays or
+            // declines `close()` while finishing a menu/event-tracking cycle.
+            panel.orderOut(nil)
             panel.close()
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak panel] in
@@ -801,9 +806,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 guard self.notePanels[id] != nil else {
                     self.closingNoteIds.remove(id)
                     return
-                }
-                if panel.isVisible {
-                    panel.orderOut(nil)
                 }
                 self.handleNotePanelClosed(noteId: id, panel: panel)
             }

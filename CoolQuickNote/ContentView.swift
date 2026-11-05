@@ -785,10 +785,15 @@ struct ContentView: View {
     }
 
     private func closeNote() {
-        if isReadingAid {
-            appDelegate.closeNote(id: noteId)
-        } else {
-            showCloseConfirmation = true
+        // Menu actions run while AppKit is still tracking the menu. Defer the
+        // close/prompt until that tracking session has ended so secondary
+        // panels receive the action just as reliably as the initial panel.
+        DispatchQueue.main.async {
+            if isReadingAid {
+                appDelegate.closeNote(id: noteId)
+            } else {
+                showCloseConfirmation = true
+            }
         }
     }
 
