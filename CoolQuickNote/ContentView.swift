@@ -273,6 +273,9 @@ struct ContentView: View {
             }
             backgroundColorMenu
             opacityMenu
+            if !isReadingAid {
+                textSizeMenu
+            }
             Divider()
             settingsCommands
             Divider()
@@ -694,6 +697,46 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private var textSizeMenu: some View {
+        Menu {
+            Button("Smaller", systemImage: "textformat.size.smaller") {
+                setTextSize(max(10, fontSize - 1))
+            }
+            .disabled(!dynamicSizingEnabled && fontSize <= 10)
+
+            Button("Larger", systemImage: "textformat.size.larger") {
+                setTextSize(min(32, fontSize + 1))
+            }
+            .disabled(!dynamicSizingEnabled && fontSize >= 32)
+
+            Divider()
+
+            ForEach([10.0, 12.0, 14.0, 16.0, 18.0, 24.0, 32.0], id: \.self) { size in
+                Button {
+                    setTextSize(size)
+                } label: {
+                    if !dynamicSizingEnabled && fontSize == size {
+                        Label("\(Int(size)) pt", systemImage: "checkmark")
+                    } else {
+                        Text("\(Int(size)) pt")
+                    }
+                }
+            }
+        } label: {
+            if dynamicSizingEnabled {
+                Label("Text Size (Auto)", systemImage: "textformat.size")
+            } else {
+                Label("Text Size (\(Int(fontSize)) pt)", systemImage: "textformat.size")
+            }
+        }
+    }
+
+    private func setTextSize(_ size: Double) {
+        dynamicSizingEnabled = false
+        fontSize = min(max(size, 10), 32)
+    }
+
+    @ViewBuilder
     private var windowActionsMenu: some View {
         Button {
             alwaysOnTop.toggle()
@@ -798,48 +841,33 @@ struct ContentView: View {
     }
 
     private func saveToNotesApp(closeAfterSave: Bool = true) {
-        // Copy note content (and any pasted image) to the clipboard.
-        preparePasteboardForExport()
-
         let script = """
-        tell application "Notes"
-            activate
+        on run argv
+            set noteBody to item 1 of argv
 
-            -- Ensure CoolQuickNote folder exists
-            set folderExists to false
+        tell application "Notes"
+            set targetFolder to missing value
             repeat with aFolder in folders
                 if name of aFolder is "CoolQuickNote" then
-                    set folderExists to true
+                    set targetFolder to aFolder
                     exit repeat
                 end if
             end repeat
 
-            if folderExists is false then
-                make new folder with properties {name:"CoolQuickNote"}
+            if targetFolder is missing value then
+                set targetFolder to make new folder with properties {name:"CoolQuickNote"}
             end if
-        end tell
 
-        delay 0.5
-
-        -- Use System Events to create new note and paste
-        tell application "System Events"
-            tell process "Notes"
-                -- Create new note with Cmd+N
-                keystroke "n" using command down
-                delay 0.5
-                -- Press Enter to move from title to body
-                keystroke return
-                delay 0.3
-                -- Paste clipboard content
-                keystroke "v" using command down
-            end tell
+            make new note at targetFolder with properties {body:noteBody}
         end tell
+        end run
         """
 
-        // Use osascript command which handles permissions better
+        let noteBody = notesHTMLBody(from: noteContent)
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
+        process.arguments = ["-e", script, "--", noteBody]
 
         let pipe = Pipe()
         let errorPipe = Pipe()
@@ -854,15 +882,7 @@ struct ContentView: View {
                 let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
                 let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
 
-                // Show error to user
-                DispatchQueue.main.async {
-                    let alert = NSAlert()
-                    alert.messageText = "Failed to Save to Notes"
-                    alert.informativeText = errorMessage
-                    alert.alertStyle = .warning
-                    alert.addButton(withTitle: "OK")
-                    alert.runModal()
-                }
+                showNotesExportError(errorMessage)
                 return
             }
 
@@ -872,14 +892,29 @@ struct ContentView: View {
                 }
             }
         } catch {
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = "Failed to Save to Notes"
-                alert.informativeText = error.localizedDescription
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
-            }
+            showNotesExportError(error.localizedDescription)
+        }
+    }
+
+    private func notesHTMLBody(from text: String) -> String {
+        let escaped = text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
+            .replacingOccurrences(of: "\n", with: "<br>")
+        return "<div>\(escaped.isEmpty ? "<br>" : escaped)</div>"
+    }
+
+    private func showNotesExportError(_ message: String) {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Failed to Save to Notes"
+            alert.informativeText = message
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
 
@@ -1725,8 +1760,13 @@ struct HoverAndWindowController: NSViewRepresentable {
         @Binding var isHovering: Bool
         @Binding var isCommandKeyPressed: Bool
         var disappearOnHover: Bool = false
+        var isMouseButtonPressed: Bool = false
+        var isPointerInside: Bool = false
+        var isContextMenuOpen: Bool = false
 
         private var updateWorkItem: DispatchWorkItem?
+        private var hoverWorkItem: DispatchWorkItem?
+        private let hoverDismissDelay: TimeInterval = 0.75
 
         init(isHovering: Binding<Bool>, isCommandKeyPressed: Binding<Bool>) {
             _isHovering = isHovering
@@ -1736,7 +1776,7 @@ struct HoverAndWindowController: NSViewRepresentable {
         func updateWindow(_ window: NSWindow?, hovering: Bool, commandPressed: Bool) {
             updateWorkItem?.cancel()
 
-            let shouldIgnore = hovering && !commandPressed && disappearOnHover
+            let shouldIgnore = hovering && !commandPressed && !isMouseButtonPressed && !isContextMenuOpen && disappearOnHover
             let workItem = DispatchWorkItem { [weak window] in
                 guard let window = window else { return }
                 if window.ignoresMouseEvents != shouldIgnore {
@@ -1757,6 +1797,58 @@ struct HoverAndWindowController: NSViewRepresentable {
 
             updateWorkItem = workItem
             DispatchQueue.main.async(execute: workItem)
+        }
+
+        func pointerChanged(isInside: Bool, window: NSWindow?) {
+            isPointerInside = isInside
+            hoverWorkItem?.cancel()
+
+            if isInside {
+                scheduleHoverDismissal(window: window)
+            } else {
+                isHovering = false
+                updateWindow(window, hovering: false, commandPressed: isCommandKeyPressed)
+            }
+        }
+
+        func mouseButtonChanged(isPressed: Bool, window: NSWindow?) {
+            isMouseButtonPressed = isPressed
+            hoverWorkItem?.cancel()
+
+            if isPressed {
+                isHovering = false
+                updateWindow(window, hovering: false, commandPressed: isCommandKeyPressed)
+            } else if isPointerInside {
+                scheduleHoverDismissal(window: window)
+            }
+        }
+
+        func contextMenuChanged(isOpen: Bool, window: NSWindow?) {
+            isContextMenuOpen = isOpen
+            hoverWorkItem?.cancel()
+
+            if isOpen {
+                isHovering = false
+                updateWindow(window, hovering: false, commandPressed: isCommandKeyPressed)
+            } else if isPointerInside {
+                scheduleHoverDismissal(window: window)
+            }
+        }
+
+        private func scheduleHoverDismissal(window: NSWindow?) {
+            hoverWorkItem?.cancel()
+
+            let workItem = DispatchWorkItem { [weak self, weak window] in
+                guard let self,
+                      self.isPointerInside,
+                      !self.isMouseButtonPressed,
+                      !self.isContextMenuOpen else { return }
+                self.isHovering = true
+                self.updateWindow(window, hovering: true, commandPressed: self.isCommandKeyPressed)
+            }
+
+            hoverWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + hoverDismissDelay, execute: workItem)
         }
     }
 }
@@ -1821,8 +1913,23 @@ final class HoverControlView: NSView {
 
         if localMouseMonitor == nil {
             localMouseMonitor = NSEvent.addLocalMonitorForEvents(
-                matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+                matching: [
+                    .mouseMoved,
+                    .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+                    .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+                    .otherMouseDown, .otherMouseUp, .otherMouseDragged
+                ]
             ) { [weak self] event in
+                if event.window === self?.window {
+                    switch event.type {
+                    case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+                        self?.coordinator?.mouseButtonChanged(isPressed: true, window: self?.window)
+                    case .leftMouseUp, .rightMouseUp, .otherMouseUp:
+                        self?.coordinator?.mouseButtonChanged(isPressed: false, window: self?.window)
+                    default:
+                        break
+                    }
+                }
                 self?.handleMouseEvent(event)
                 return event
             }
@@ -1890,8 +1997,10 @@ final class HoverControlView: NSView {
             menuTrackingDepth -= 1
         }
         isMenuTracking = menuTrackingDepth > 0
-        if wasTracking && !isMenuTracking {
-            refreshHoverState()
+        if !wasTracking && isMenuTracking {
+            coordinator?.contextMenuChanged(isOpen: true, window: window)
+        } else if wasTracking && !isMenuTracking {
+            coordinator?.contextMenuChanged(isOpen: false, window: window)
         }
     }
 
@@ -1903,20 +2012,18 @@ final class HoverControlView: NSView {
 
     private func updateHoverState(with event: NSEvent?) {
         guard let coordinator = coordinator, let window = window else { return }
-        if isMenuTracking {
-            return
-        }
-
         let isHoveringNow = window.frame.contains(NSEvent.mouseLocation)
-        if coordinator.isHovering != isHoveringNow {
-            coordinator.isHovering = isHoveringNow
+        if coordinator.isPointerInside != isHoveringNow {
+            coordinator.pointerChanged(isInside: isHoveringNow, window: window)
         }
 
         if let event = event {
             coordinator.isCommandKeyPressed = event.modifierFlags.contains(.command)
         }
 
-        coordinator.updateWindow(window, hovering: coordinator.isHovering, commandPressed: coordinator.isCommandKeyPressed)
+        if !isMenuTracking && !coordinator.isMouseButtonPressed {
+            coordinator.updateWindow(window, hovering: coordinator.isHovering, commandPressed: coordinator.isCommandKeyPressed)
+        }
     }
 }
 

@@ -21,7 +21,7 @@ struct NoteData: Codable, Identifiable {
     init(id: UUID = UUID(),
          content: String = "",
          selectedFont: String = "regular",
-         fontSize: Double = 11,
+         fontSize: Double = 14,
          fontColorName: String = "blue",
          backgroundColorName: String = "yellow",
          stayOnThisScreen: Bool = false,
