@@ -585,6 +585,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Seed defaults so the new note picks up its initial appearance immediately
         UserDefaults.standard.set(opacity, forKey: "note_\(newNoteId.uuidString)_opacity")
         UserDefaults.standard.set(backgroundColor, forKey: "note_\(newNoteId.uuidString)_backgroundColor")
+        UserDefaults.standard.set(14.0, forKey: "note_\(newNoteId.uuidString)_fontSize")
         UserDefaults.standard.set(isReadingAid, forKey: readingAidKey(for: newNoteId))
         if isReadingAid {
             UserDefaults.standard.set("", forKey: "note_\(newNoteId.uuidString)_content")
