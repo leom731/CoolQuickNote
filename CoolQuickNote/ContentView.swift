@@ -214,14 +214,14 @@ struct ContentView: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onChange(of: noteContent) { _ in
+                    .onChange(of: noteContent) { _, _ in
                         if dynamicSizingEnabled {
                             updateDynamicSizing(for: windowSize)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onChange(of: geometry.size) { newSize in
+                .onChange(of: geometry.size) { _, newSize in
                     updateDynamicSizing(for: newSize)
                 }
                 .onAppear {
@@ -306,7 +306,7 @@ struct ContentView: View {
 
             applyWindowChrome()
         }
-        .onChange(of: currentWindow) { _ in
+        .onChange(of: currentWindow) { _, _ in
             applyWindowChrome()
         }
         .onPasteCommand(of: [.image, .png, .jpeg, .tiff]) { providers in
@@ -1657,12 +1657,12 @@ struct SettingsView: View {
                         .padding(.vertical, 4)
 
                     Toggle("Always on Top", isOn: $alwaysOnTop)
-                        .onChange(of: alwaysOnTop) { newValue in
+                        .onChange(of: alwaysOnTop) { _, newValue in
                             appDelegate.updateAlwaysOnTop(for: noteId, alwaysOnTop: newValue)
                         }
 
                     Toggle("Stay on This Desktop", isOn: $stayOnThisScreen)
-                        .onChange(of: stayOnThisScreen) { newValue in
+                        .onChange(of: stayOnThisScreen) { _, newValue in
                             appDelegate.updateStayOnThisScreen(for: noteId, stayOnThisScreen: newValue)
                         }
 
@@ -2351,7 +2351,7 @@ struct TipJarView: View {
         } message: {
             Text("Your support means everything! Thanks for helping keep this app free and awesome.")
         }
-        .onChange(of: storeKit.purchaseState) { newState in
+        .onChange(of: storeKit.purchaseState) { _, newState in
             if case .purchased = newState {
                 showThankYou = true
                 storeKit.resetPurchaseState()
