@@ -969,16 +969,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         panel.level = alwaysOnTop ? .floating : .normal
 
         if stayOnThisScreen {
-            panel.collectionBehavior = [.stationary, .fullScreenAuxiliary]
+            // A managed window belongs to one Space. `.stationary` only controls
+            // Mission Control and does not express the single-Space behavior.
+            panel.collectionBehavior = [.managed, .fullScreenAuxiliary]
         } else {
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        }
+    }
+
+    private func reapplySpaceBehavior(to panel: NSPanel, stayOnThisScreen: Bool, alwaysOnTop: Bool) {
+        // AppKit can retain a visible window's existing Space membership when
+        // collectionBehavior changes. Removing it first makes the new membership
+        // take effect immediately for notes that are already open.
+        let wasVisible = panel.isVisible
+        if wasVisible {
+            panel.orderOut(nil)
+        }
+
+        applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen, alwaysOnTop: alwaysOnTop)
+
+        if wasVisible {
+            panel.orderFrontRegardless()
         }
     }
 
     func updateStayOnThisScreen(for noteId: UUID, stayOnThisScreen: Bool) {
         guard let panel = notePanels[noteId] else { return }
         let alwaysOnTop = ensureAlwaysOnTopSetting(for: noteId)
-        applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen, alwaysOnTop: alwaysOnTop)
+        reapplySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen, alwaysOnTop: alwaysOnTop)
 
         if stayOnThisScreen {
             if let spaceID = getCurrentSpaceIdentifier(for: panel) {
@@ -1005,7 +1023,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         for (id, panel) in notePanels {
             defaults.set(false, forKey: stayOnThisScreenKey(for: id))
             let alwaysOnTop = ensureAlwaysOnTopSetting(for: id)
-            applySpaceBehavior(to: panel, stayOnThisScreen: false, alwaysOnTop: alwaysOnTop)
+            reapplySpaceBehavior(to: panel, stayOnThisScreen: false, alwaysOnTop: alwaysOnTop)
+            saveSpaceIdentifier(for: id, spaceID: nil)
             // Show the note on all spaces
             panel.orderFrontRegardless()
         }
@@ -1692,12 +1711,12 @@ private final class ActivatingPanel: NSPanel {
                 // activation queued until after close(), so never bring a panel
                 // back once the close action has hidden it.
                 guard let self, self.isVisible else { return }
-                self.makeKeyAndOrderFront(nil)  // Keep the clicked panel key in the current space without hopping spaces
+                self.makeKeyAndOrderFront(nil)
                 if !self.isKeyWindow {
-                    self.makeKey()  // Ensure window becomes key so traffic lights reappear after returning to the app
+                    self.makeKey()
                 }
                 if !NSApp.isActive {
-                    NSApp.activate(ignoringOtherApps: true)  // Ensure app becomes active so traffic lights can appear
+                    NSApp.activate(ignoringOtherApps: true)
                 }
             }
         default:
