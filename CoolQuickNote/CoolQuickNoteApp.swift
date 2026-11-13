@@ -1687,7 +1687,11 @@ private final class ActivatingPanel: NSPanel {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
             // Defer activation to the next run loop to avoid QoS inversion warnings inside AppKit.
             RunLoop.main.perform(inModes: [.common]) { [weak self] in
-                guard let self else { return }
+                // A reading aid closes immediately from its SwiftUI menus. The
+                // mouse-down that opened one of those menus may leave this
+                // activation queued until after close(), so never bring a panel
+                // back once the close action has hidden it.
+                guard let self, self.isVisible else { return }
                 self.makeKeyAndOrderFront(nil)  // Keep the clicked panel key in the current space without hopping spaces
                 if !self.isKeyWindow {
                     self.makeKey()  // Ensure window becomes key so traffic lights reappear after returning to the app
