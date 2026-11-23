@@ -834,6 +834,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     fileprivate func handleNotePanelClosed(noteId: UUID, panel: NSPanel?) {
+        // A recently closed note is reopened with the same note ID. AppKit can
+        // deliver the old panel's close notification after its replacement has
+        // already been installed in notePanels. Never let that stale callback
+        // unregister (and release the delegate for) the new panel.
+        if let panel,
+           let registeredPanel = notePanels[noteId],
+           registeredPanel !== panel {
+            return
+        }
+
         if let settingsPanel = settingsPanels[noteId] {
             settingsPanel.close()
         }
