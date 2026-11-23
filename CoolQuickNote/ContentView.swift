@@ -141,7 +141,7 @@ struct ContentView: View {
     }
 
     private var shouldHideOnHover: Bool {
-        disappearOnHover && isHovering && !isCommandKeyPressed && !isShowingReadingAidPrompt
+        disappearOnHover && isHovering && !isCommandKeyPressed && !isShowingReadingAidPrompt && !showCloseConfirmation
     }
 
     private var trimmedReadingAidName: String {
@@ -253,6 +253,7 @@ struct ContentView: View {
             .allowsHitTesting(false)
         )
         .overlay(readingAidPromptOverlay)
+        .overlay(closeConfirmationOverlay)
         .contextMenu {
             if !isReadingAid {
                 Button(action: pasteImageFromClipboard) {
@@ -318,16 +319,6 @@ struct ContentView: View {
             guard let targetId = notification.userInfo?["noteId"] as? UUID else { return }
             guard targetId == noteId else { return }
             pasteImageFromClipboard()
-        }
-        .alert("Save Note", isPresented: $showCloseConfirmation) {
-            Button("Save to Notes and Close") {
-                saveToNotesApp(closeAfterSave: true)
-            }
-            Button("Save to Stickies and Close", action: saveToStickiesApp)
-            Button("Discard", role: .destructive, action: discardNote)
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Would you like to save this note to Notes or Stickies?")
         }
     }
 
@@ -421,6 +412,42 @@ struct ContentView: View {
             .onAppear {
                 isReadingAidNameFocused = true
             }
+        }
+    }
+
+    @ViewBuilder
+    private var closeConfirmationOverlay: some View {
+        if showCloseConfirmation {
+            ZStack {
+                Color.black.opacity(0.25)
+                    .ignoresSafeArea()
+
+                VStack(spacing: 10) {
+                    Text("Close Note")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Save this note before closing?")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+
+                    VStack(spacing: 6) {
+                        Button("Save to Notes and Close") {
+                            saveToNotesApp(closeAfterSave: true)
+                        }
+                        Button("Save to Stickies and Close", action: saveToStickiesApp)
+                        Button("Discard", role: .destructive, action: discardNote)
+                        Button("Cancel") {
+                            showCloseConfirmation = false
+                        }
+                        .keyboardShortcut(.cancelAction)
+                    }
+                    .controlSize(.small)
+                }
+                .padding(14)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .frame(maxWidth: 280)
+            }
+            .transition(.opacity)
         }
     }
 

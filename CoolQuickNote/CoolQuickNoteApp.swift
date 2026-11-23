@@ -274,8 +274,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private let maxRecentClosedNotes = 10
     private var closingNoteIds: Set<UUID> = []
     private var statusItem: NSStatusItem?
-    private var spaceObserver: NSObjectProtocol?
-    private var frontAppObserver: NSObjectProtocol?
     private var readingAidScrollMonitor: Any?
     @Published var noteCount: Int = 0
     @Published var activeNoteId: UUID?
@@ -311,22 +309,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             for noteData in savedNotes {
                 createNotePanel(with: noteData)
             }
-        }
-
-        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.activeSpaceDidChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.refreshNoteVisibilityForActiveSpace()
-        }
-
-        frontAppObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.refreshNoteVisibilityForActiveSpace()
         }
 
         setupReadingAidScrollMonitor()
@@ -767,7 +749,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             }
         }
 
-        refreshNoteVisibilityForActiveSpace()
     }
 
     private func defaultFrameForFirstLaunch(size: CGSize, on screen: NSScreen? = nil) -> CGRect {
@@ -789,10 +770,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             guard !self.closingNoteIds.contains(id) else { return }
             self.closingNoteIds.insert(id)
 
-            guard let panel = self.resolveNotePanel(for: id) else {
+            // The registry is the single source of truth. Searching NSApp.windows
+            // can return an older, already-closed panel after a recent item has
+            // been reopened with the same note ID.
+            guard let panel = self.notePanels[id] else {
                 self.closingNoteIds.remove(id)
                 return
             }
+
+            (panel as? ActivatingPanel)?.isClosing = true
 
             // Hiding first makes the close immediate even if AppKit delays or
             // declines `close()` while finishing a menu/event-tracking cycle.
@@ -817,20 +803,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         } else {
             DispatchQueue.main.async(execute: closePanel)
         }
-    }
-
-    private func resolveNotePanel(for noteId: UUID) -> NSPanel? {
-        for window in NSApp.windows {
-            if let panel = window as? ActivatingPanel, panel.noteId == noteId {
-                return panel
-            }
-        }
-
-        if let panel = notePanels[noteId] {
-            return panel
-        }
-
-        return nil
     }
 
     fileprivate func handleNotePanelClosed(noteId: UUID, panel: NSPanel?) {
@@ -881,6 +853,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         areNotesHidden = false
 
         for (id, panel) in notePanels {
+            guard !closingNoteIds.contains(id) else { continue }
             let stayOnThisScreen = ensureStayOnThisScreenSetting(for: id)
 
             if stayOnThisScreen {
@@ -988,6 +961,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     private func reapplySpaceBehavior(to panel: NSPanel, stayOnThisScreen: Bool, alwaysOnTop: Bool) {
+        if let panel = panel as? ActivatingPanel, panel.isClosing {
+            return
+        }
+
         // AppKit can retain a visible window's existing Space membership when
         // collectionBehavior changes. Removing it first makes the new membership
         // take effect immediately for notes that are already open.
@@ -1004,7 +981,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func updateStayOnThisScreen(for noteId: UUID, stayOnThisScreen: Bool) {
-        guard let panel = notePanels[noteId] else { return }
+        guard !closingNoteIds.contains(noteId), let panel = notePanels[noteId] else { return }
         let alwaysOnTop = ensureAlwaysOnTopSetting(for: noteId)
         reapplySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen, alwaysOnTop: alwaysOnTop)
 
@@ -1021,7 +998,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func updateAlwaysOnTop(for noteId: UUID, alwaysOnTop: Bool) {
-        guard let panel = notePanels[noteId] else { return }
+        guard !closingNoteIds.contains(noteId), let panel = notePanels[noteId] else { return }
         let stayOnThisScreen = ensureStayOnThisScreenSetting(for: noteId)
         applySpaceBehavior(to: panel, stayOnThisScreen: stayOnThisScreen, alwaysOnTop: alwaysOnTop)
         panel.orderFrontRegardless()
@@ -1031,6 +1008,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func disableStayOnThisScreenForAllNotes() {
         let defaults = UserDefaults.standard
         for (id, panel) in notePanels {
+            guard !closingNoteIds.contains(id) else { continue }
             defaults.set(false, forKey: stayOnThisScreenKey(for: id))
             let alwaysOnTop = ensureAlwaysOnTopSetting(for: id)
             reapplySpaceBehavior(to: panel, stayOnThisScreen: false, alwaysOnTop: alwaysOnTop)
@@ -1313,30 +1291,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             notes[index].savedSpaceIdentifier = spaceID
             if let encoded = try? JSONEncoder().encode(notes) {
                 UserDefaults.standard.set(encoded, forKey: notesKey)
-            }
-        }
-    }
-
-    private func refreshNoteVisibilityForActiveSpace() {
-        // Don't show notes if user has hidden them
-        if areNotesHidden {
-            return
-        }
-
-        for (id, panel) in notePanels {
-            let stayOnThisScreen = ensureStayOnThisScreenSetting(for: id)
-
-            if stayOnThisScreen {
-                if panel.isOnActiveSpace {
-                    if !panel.isVisible {
-                        panel.orderFrontRegardless()
-                    }
-                }
-            } else {
-                // Notes without "Stay on This Desktop" are always visible
-                if !panel.isVisible {
-                    panel.orderFrontRegardless()
-                }
             }
         }
     }
@@ -1693,6 +1647,7 @@ fileprivate class TipJarPanelDelegate: NSObject, NSWindowDelegate {
 private final class ActivatingPanel: NSPanel {
     var noteId: UUID?
     var preventEscapeKeyClose = false
+    var isClosing = false
     private var trackingArea: NSTrackingArea?
 
     override func awakeFromNib() {
@@ -1720,7 +1675,7 @@ private final class ActivatingPanel: NSPanel {
                 // mouse-down that opened one of those menus may leave this
                 // activation queued until after close(), so never bring a panel
                 // back once the close action has hidden it.
-                guard let self, self.isVisible else { return }
+                guard let self, self.isVisible, !self.isClosing else { return }
                 self.makeKeyAndOrderFront(nil)
                 if !self.isKeyWindow {
                     self.makeKey()
