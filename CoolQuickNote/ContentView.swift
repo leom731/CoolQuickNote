@@ -31,6 +31,17 @@ private enum QuickNoteDateInsertion {
     }
 }
 
+private enum RecentHistoryClearConfirmation {
+    case notes
+    case readingAids
+}
+
+private struct RecentItemRemovalConfirmation {
+    let noteId: UUID
+    let title: String
+    let isReadingAid: Bool
+}
+
 struct ContentView: View {
     let noteId: UUID
     @ObservedObject var appDelegate: AppDelegate
@@ -57,6 +68,8 @@ struct ContentView: View {
     @State private var isHovering: Bool = false
     @State private var isCommandKeyPressed: Bool = false
     @State private var showCloseConfirmation: Bool = false
+    @State private var recentHistoryClearConfirmation: RecentHistoryClearConfirmation?
+    @State private var recentItemRemovalConfirmation: RecentItemRemovalConfirmation?
     @State private var isShowingReadingAidPrompt: Bool = false
     @State private var readingAidNameDraft: String = ""
     @FocusState private var isReadingAidNameFocused: Bool
@@ -141,7 +154,7 @@ struct ContentView: View {
     }
 
     private var shouldHideOnHover: Bool {
-        disappearOnHover && isHovering && !isCommandKeyPressed && !isShowingReadingAidPrompt && !showCloseConfirmation
+        disappearOnHover && isHovering && !isCommandKeyPressed && !isShowingReadingAidPrompt && !showCloseConfirmation && recentHistoryClearConfirmation == nil && recentItemRemovalConfirmation == nil
     }
 
     private var trimmedReadingAidName: String {
@@ -254,6 +267,8 @@ struct ContentView: View {
         )
         .overlay(readingAidPromptOverlay)
         .overlay(closeConfirmationOverlay)
+        .overlay(recentHistoryClearConfirmationOverlay)
+        .overlay(recentItemRemovalConfirmationOverlay)
         .contextMenu {
             if !isReadingAid {
                 Button(action: pasteImageFromClipboard) {
@@ -324,12 +339,28 @@ struct ContentView: View {
 
     private var recentClosedNotesMenu: some View {
         Menu("Reopen Recently Closed Notes") {
+            Button("Clear List…", role: .destructive) {
+                recentHistoryClearConfirmation = .notes
+            }
+            .disabled(appDelegate.recentClosedNotes.isEmpty)
+            Divider()
+
             if appDelegate.recentClosedNotes.isEmpty {
                 Text("No Recently Closed Notes")
             } else {
                 ForEach(appDelegate.recentClosedNotes.prefix(10)) { note in
-                    Button(recentClosedTitle(for: note)) {
-                        appDelegate.reopenRecentlyClosedNote(noteId: note.id)
+                    let title = recentClosedTitle(for: note)
+                    Menu(title) {
+                        Button("Reopen") {
+                            appDelegate.reopenRecentlyClosedNote(noteId: note.id)
+                        }
+                        Button("Remove from Recently Closed…", role: .destructive) {
+                            recentItemRemovalConfirmation = RecentItemRemovalConfirmation(
+                                noteId: note.id,
+                                title: title,
+                                isReadingAid: false
+                            )
+                        }
                     }
                 }
             }
@@ -338,12 +369,28 @@ struct ContentView: View {
 
     private var recentClosedReadingAidsMenu: some View {
         Menu("Reopen Recently Closed Reading Aids") {
+            Button("Clear List…", role: .destructive) {
+                recentHistoryClearConfirmation = .readingAids
+            }
+            .disabled(appDelegate.recentClosedReadingAids.isEmpty)
+            Divider()
+
             if appDelegate.recentClosedReadingAids.isEmpty {
                 Text("No Recently Closed Reading Aids")
             } else {
                 ForEach(appDelegate.recentClosedReadingAids.prefix(10)) { note in
-                    Button(recentClosedReadingAidTitle(for: note)) {
-                        appDelegate.reopenRecentlyClosedReadingAid(noteId: note.id)
+                    let title = recentClosedReadingAidTitle(for: note)
+                    Menu(title) {
+                        Button("Reopen") {
+                            appDelegate.reopenRecentlyClosedReadingAid(noteId: note.id)
+                        }
+                        Button("Remove from Recently Closed…", role: .destructive) {
+                            recentItemRemovalConfirmation = RecentItemRemovalConfirmation(
+                                noteId: note.id,
+                                title: title,
+                                isReadingAid: true
+                            )
+                        }
                     }
                 }
             }
@@ -446,6 +493,99 @@ struct ContentView: View {
                 .padding(14)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .frame(maxWidth: 280)
+            }
+            .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private var recentHistoryClearConfirmationOverlay: some View {
+        if let confirmation = recentHistoryClearConfirmation {
+            let isReadingAidHistory = confirmation == .readingAids
+
+            ZStack {
+                Color.black.opacity(0.25)
+                    .ignoresSafeArea()
+
+                VStack(spacing: 12) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 22, weight: .semibold))
+                    Text(isReadingAidHistory
+                         ? "Clear Recently Closed Reading Aids?"
+                         : "Clear Recently Closed Notes?")
+                        .font(.system(size: 15, weight: .semibold))
+                        .multilineTextAlignment(.center)
+                    Text("This removes the entire list and cannot be undone.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+
+                    HStack(spacing: 12) {
+                        Button("Cancel") {
+                            recentHistoryClearConfirmation = nil
+                        }
+                        .keyboardShortcut(.cancelAction)
+
+                        Button("Clear", role: .destructive) {
+                            if isReadingAidHistory {
+                                appDelegate.clearRecentlyClosedReadingAids()
+                            } else {
+                                appDelegate.clearRecentlyClosedNotes()
+                            }
+                            recentHistoryClearConfirmation = nil
+                        }
+                    }
+                    .controlSize(.small)
+                }
+                .padding(16)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .frame(maxWidth: 300)
+            }
+            .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private var recentItemRemovalConfirmationOverlay: some View {
+        if let confirmation = recentItemRemovalConfirmation {
+            ZStack {
+                Color.black.opacity(0.25)
+                    .ignoresSafeArea()
+
+                VStack(spacing: 12) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 22, weight: .semibold))
+                    Text(confirmation.isReadingAid
+                         ? "Remove Recently Closed Reading Aid?"
+                         : "Remove Recently Closed Note?")
+                        .font(.system(size: 15, weight: .semibold))
+                        .multilineTextAlignment(.center)
+                    Text("“\(confirmation.title)” will be removed from the list. This cannot be undone.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+
+                    HStack(spacing: 12) {
+                        Button("Cancel") {
+                            recentItemRemovalConfirmation = nil
+                        }
+                        .keyboardShortcut(.cancelAction)
+
+                        Button("Remove", role: .destructive) {
+                            if confirmation.isReadingAid {
+                                appDelegate.removeRecentlyClosedReadingAid(noteId: confirmation.noteId)
+                            } else {
+                                appDelegate.removeRecentlyClosedNote(noteId: confirmation.noteId)
+                            }
+                            recentItemRemovalConfirmation = nil
+                        }
+                    }
+                    .controlSize(.small)
+                }
+                .padding(16)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .frame(maxWidth: 320)
             }
             .transition(.opacity)
         }

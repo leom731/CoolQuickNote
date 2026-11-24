@@ -333,6 +333,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         menu.addItem(NSMenuItem.separator())
 
         let recentMenu = NSMenu()
+        let clearRecentNotesItem = NSMenuItem(
+            title: "Clear List…",
+            action: #selector(confirmClearRecentlyClosedNotes),
+            keyEquivalent: ""
+        )
+        clearRecentNotesItem.isEnabled = !recentClosedNotes.isEmpty
+        recentMenu.addItem(clearRecentNotesItem)
+        recentMenu.addItem(NSMenuItem.separator())
         if recentClosedNotes.isEmpty {
             let emptyItem = NSMenuItem(title: "No Recently Closed Notes", action: nil, keyEquivalent: "")
             emptyItem.isEnabled = false
@@ -351,6 +359,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         menu.addItem(recentItem)
 
         let recentReadingAidMenu = NSMenu()
+        let clearRecentReadingAidsItem = NSMenuItem(
+            title: "Clear List…",
+            action: #selector(confirmClearRecentlyClosedReadingAids),
+            keyEquivalent: ""
+        )
+        clearRecentReadingAidsItem.isEnabled = !recentClosedReadingAids.isEmpty
+        recentReadingAidMenu.addItem(clearRecentReadingAidsItem)
+        recentReadingAidMenu.addItem(NSMenuItem.separator())
         if recentClosedReadingAids.isEmpty {
             let emptyItem = NSMenuItem(title: "No Recently Closed Reading Aids", action: nil, keyEquivalent: "")
             emptyItem.isEnabled = false
@@ -1402,6 +1418,66 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if let encoded = try? JSONEncoder().encode(recentClosedReadingAids) {
             UserDefaults.standard.set(encoded, forKey: recentClosedReadingAidsKey)
         }
+    }
+
+    func clearRecentlyClosedNotes() {
+        let removedNotes = recentClosedNotes
+        recentClosedNotes.removeAll()
+        persistRecentClosedNotes()
+        removeStoredImages(for: removedNotes)
+        updateMenuBarMenu()
+    }
+
+    func clearRecentlyClosedReadingAids() {
+        let removedReadingAids = recentClosedReadingAids
+        recentClosedReadingAids.removeAll()
+        persistRecentClosedReadingAids()
+        removeStoredImages(for: removedReadingAids)
+        updateMenuBarMenu()
+    }
+
+    func removeRecentlyClosedNote(noteId: UUID) {
+        guard let index = recentClosedNotes.firstIndex(where: { $0.id == noteId }) else { return }
+        let removedNote = recentClosedNotes.remove(at: index)
+        persistRecentClosedNotes()
+        removeStoredImages(for: [removedNote])
+        updateMenuBarMenu()
+    }
+
+    func removeRecentlyClosedReadingAid(noteId: UUID) {
+        guard let index = recentClosedReadingAids.firstIndex(where: { $0.id == noteId }) else { return }
+        let removedReadingAid = recentClosedReadingAids.remove(at: index)
+        persistRecentClosedReadingAids()
+        removeStoredImages(for: [removedReadingAid])
+        updateMenuBarMenu()
+    }
+
+    private func removeStoredImages(for notes: [RecentClosedNote]) {
+        for note in notes {
+            UserDefaults.standard.removeObject(forKey: imageStorageKey(for: note.id))
+        }
+    }
+
+    @objc private func confirmClearRecentlyClosedNotes() {
+        guard !recentClosedNotes.isEmpty else { return }
+        guard confirmClearingRecentHistory(named: "notes") else { return }
+        clearRecentlyClosedNotes()
+    }
+
+    @objc private func confirmClearRecentlyClosedReadingAids() {
+        guard !recentClosedReadingAids.isEmpty else { return }
+        guard confirmClearingRecentHistory(named: "reading aids") else { return }
+        clearRecentlyClosedReadingAids()
+    }
+
+    private func confirmClearingRecentHistory(named itemName: String) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Clear Recently Closed \(itemName.capitalized)?"
+        alert.informativeText = "This removes the entire list and cannot be undone."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Clear")
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     private func titleForRecentClosedNote(_ note: RecentClosedNote) -> String {
